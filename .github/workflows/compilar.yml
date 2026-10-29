@@ -1,0 +1,93 @@
+# Compila el juego cada vez que se sube algo a "main":
+#   - version web  -> se publica en GitHub Pages (se juega desde el navegador o el celu)
+#   - version Windows (.exe) -> se puede descargar desde la pagina
+name: Compilar y publicar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  RAYLIB_VERSION: "5.5"
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Si se subio el proyecto como "proyecto.zip" (por ejemplo desde el celu),
+      # lo descomprime, borra el zip y guarda los archivos sueltos en el repo.
+      - name: Descomprimir proyecto.zip
+        run: |
+          if [ -f proyecto.zip ]; then
+            unzip -o -q proyecto.zip
+            rm proyecto.zip
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Descomprimir proyecto.zip"
+            git push
+          fi
+
+      - name: Bajar raylib
+        run: git clone --depth 1 --branch "$RAYLIB_VERSION" https://github.com/raysan5/raylib.git raylib
+
+      - name: Instalar Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.64
+
+      - name: Compilar version web
+        run: |
+          make -C raylib/src PLATFORM=PLATFORM_WEB -j4
+          mkdir -p sitio
+          emcc -O2 -std=c99 -Wall src/*.c -o sitio/index.html \
+            -Iraylib/src raylib/src/libraylib.a -DPLATFORM_WEB \
+            -sUSE_GLFW=3 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1mb \
+            --preload-file assets --shell-file web/shell.html
+
+      - name: Compilar version Windows
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mingw-w64 zip
+          curl -sSL -o raylib-win.zip "https://github.com/raysan5/raylib/releases/download/$RAYLIB_VERSION/raylib-${RAYLIB_VERSION}_win64_mingw-w64.zip"
+          unzip -q raylib-win.zip -d raylib-win
+          RW=$(ls -d raylib-win/*/)
+          mkdir -p windows/EscapeZombi
+          x86_64-w64-mingw32-gcc -O2 -std=c99 -Wall src/*.c -o windows/EscapeZombi/EscapeZombi.exe \
+            -I"$RW/include" "$RW/lib/libraylib.a" -lopengl32 -lgdi32 -lwinmm -static -mwindows
+          cp -r assets windows/EscapeZombi/
+          (cd windows && zip -qr ../sitio/EscapeZombi-Windows.zip EscapeZombi)
+
+      - name: Guardar el .exe de Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: EscapeZombi-Windows
+          path: windows/EscapeZombi
+
+      - name: Preparar la pagina
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: sitio
+
+  publicar:
+    needs: compilar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Publicar en GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+        
