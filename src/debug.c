@@ -7,7 +7,7 @@
 #include "juego.h"
 
 enum { VOLVER = -1 };
-enum { D_ITEMS = 1, D_STATS, D_D20, D_TP };
+enum { D_ITEMS = 1, D_STATS, D_D20, D_TP, D_NUMS };
 enum {
     S_VIDA_MAS = 1, S_VIDA_MENOS, S_VIDA_LLENA, S_VMAX_MAS, S_FUERZA_MAS, S_FUERZA_MENOS,
     S_INF_MAS, S_INF_MENOS, S_TURNO_MAS, S_TURNO_MENOS
@@ -29,6 +29,7 @@ void debug_pantalla(Juego *g)
         else          agregar_opcion(p, D_D20, 0, "Always d20 (ahora: apagado)");
         agregar_opcion(p, D_TP, g->en_combate, g->en_combate ? "Teletransportarse (no en combate)"
                                                              : "Teletransportarse");
+        agregar_opcion(p, D_NUMS, 0, "Mostrar números (ahora: %s)", ver_numeros ? "sí" : "no");
         agregar_opcion(p, VOLVER, 0, "Volver");
         break;
 
@@ -96,6 +97,7 @@ void debug_elegir(Juego *g, int v)
         else if (v == D_STATS) g->estado = E_DEBUG_STATS;
         else if (v == D_D20)   g->estado = E_DEBUG_D20;
         else if (v == D_TP)    g->estado = E_DEBUG_TP;
+        else if (v == D_NUMS)  ver_numeros = !ver_numeros;
         break;
 
     case E_DEBUG_ITEMS:

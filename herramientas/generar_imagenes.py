@@ -5,7 +5,7 @@ Solo crea las que faltan: si ya pusiste tu propia imagen, no la toca.
 Para regenerar todo:  python3 herramientas/generar_imagenes.py --todas
 
 Tamanos recomendados para tus imagenes:
-  assets/bloques/<slug>.png   1280 x 400  (se recorta para cubrir la zona)
+  assets/lugares/<slug>.png   1280 x 400  (se recorta para cubrir la zona)
   assets/enemigos/<slug>.png  PNG con fondo transparente, ~600 x 700
   assets/finales/<slug>.png   1280 x 400
   assets/portada.png          1280 x 400
@@ -30,6 +30,17 @@ def guardar(img, ruta):
     os.makedirs(os.path.dirname(ruta), exist_ok=True)
     if os.path.exists(ruta) and not TODAS:
         return False
+    if img.mode == "RGBA":
+        # enemigos: silueta oscura con un borde gris apenas visible
+        alfa = img.split()[3]
+        borde = alfa.filter(ImageFilter.MaxFilter(5))
+        sil = Image.new("RGBA", img.size, (70, 70, 70, 0))
+        sil.putalpha(borde)
+        cuerpo = Image.new("RGBA", img.size, (8, 8, 8, 0))
+        cuerpo.putalpha(alfa)
+        img = Image.alpha_composite(sil, cuerpo)
+    else:
+        img = img.convert("L").convert("RGB")   # imagenes de prueba en blanco y negro
     img.save(ruta)
     return True
 
@@ -98,9 +109,12 @@ def rotulo(img, texto, sub):
 
 def bloques():
     src = open(os.path.join(RAIZ, "src", "mapa.c"), encoding="utf-8").read()
-    patron = re.compile(r'\[B_\w+\]\s*=\s*\{"(\w+)",\s*"([^"]+)",\s*(C_\w+),\s*(\d)')
+    patron = re.compile(r'\[(B_\w+)\]\s*=\s*\{"(\w+)",\s*"([^"]+)",\s*(C_\w+),\s*(\d)')
+    con_bioma = set(re.findall(r'\[(B_\w+)\]\s*=\s*"\w+"', src))   # usan assets/biomas/
     n = 0
-    for slug, nombre, color, sub in patron.findall(src):
+    for enum, slug, nombre, color, sub in patron.findall(src):
+        if enum in con_bioma:
+            continue
         rnd = random.Random(int(hashlib.md5(slug.encode()).hexdigest(), 16))
         c = COLORES[color]
         img = degradado(1280, 400, oscuro(c, 0.55), (10, 10, 14))
@@ -110,8 +124,8 @@ def bloques():
             ciudad(img, rnd, c)
             if color == "C_CELESTE":
                 reflectores(img, rnd)
-        rotulo(img, nombre, "imagen de prueba · reemplazá assets/bloques/%s.png" % slug)
-        n += guardar(img, os.path.join(ASSETS, "bloques", slug + ".png"))
+        rotulo(img, nombre, "imagen de prueba · reemplazá assets/lugares/%s.png" % slug)
+        n += guardar(img, os.path.join(ASSETS, "lugares", slug + ".png"))
     return n
 
 def figura(color, tipo):

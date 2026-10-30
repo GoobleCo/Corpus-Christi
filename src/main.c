@@ -3,10 +3,13 @@
  * Dibuja la pantalla como una novela visual:
  *
  *   +--------------------------------------------------+
- *   |  IMAGEN del bloque (+ enemigo encima)       HUD  |
+ *   |  IMAGEN del bloque (+ enemigo encima)            |
  *   +-----------------------------+--------------------+
- *   |  DESCRIPCION / lo que pasó  |  OPCIONES 1..8     |
+ *   |  TITULO                     |  1  opcion         |
+ *   |  descripcion / lo que pasó  |  2  opcion  ...    |
  *   +-----------------------------+--------------------+
+ *
+ * Minimalista: fuera de las imagenes, todo es blanco sobre negro.
  *
  * Las opciones se eligen con los numeros del teclado o tocando/clickeando.
  * Todo se dibuja en un lienzo de 1280x720 que despues se escala a la ventana.
@@ -27,32 +30,27 @@
 
 #define ANCHO        1280
 #define ALTO         720
-#define IMG_ALTO     400
-#define TXT_X        28
-#define TXT_Y        418
-#define TXT_W        730
-#define TXT_ALTO     288
-#define OPC_X        790
-#define OPC_Y        416
-#define OPC_W        466
-#define OPC_H        32
-#define OPC_SEP      4
+#define IMG_ALTO     384
+#define TITULO_Y     404
+#define TXT_X        40
+#define TXT_Y        448
+#define TXT_W        700
+#define TXT_ALTO     252
+#define OPC_X        800
+#define OPC_Y        400
+#define OPC_W        440
+#define OPC_H        34
+#define OPC_SEP      2
 #define MAX_VISIBLES 8
+#define TAM_TITULO   26
 #define TAM_TEXTO    20
-#define LINEA        25
-#define TAM_OPCION   19
+#define LINEA        26
+#define TAM_OPCION   20
 
-/* Colores */
-#define C_FONDO      (Color){ 14, 14, 18, 255 }
-#define C_PANEL      (Color){ 20, 20, 26, 255 }
-#define C_TEXTO      (Color){ 226, 226, 232, 255 }
-#define C_TENUE      (Color){ 140, 140, 152, 255 }
-#define C_ACENTO     (Color){ 214, 64, 52, 255 }
-#define C_BOTON      (Color){ 34, 34, 44, 255 }
-#define C_BOTON_HOV  (Color){ 54, 54, 70, 255 }
-#define C_BOTON_OFF  (Color){ 24, 24, 30, 255 }
-#define C_VIDA       (Color){ 206, 58, 58, 255 }
-#define C_INFEC      (Color){ 120, 196, 70, 255 }
+/* Colores: solo blanco y negro */
+#define C_NEGRO      (Color){ 0, 0, 0, 255 }
+#define C_BLANCO     (Color){ 255, 255, 255, 255 }
+#define C_APAGADO    (Color){ 255, 255, 255, 80 }
 
 static Juego juego;
 static Font fuente, fuente_negrita;
@@ -105,15 +103,15 @@ static void dibujar_cubriendo(Texture2D t, Rectangle dst)
     DrawTexturePro(t, src, dst, (Vector2){ 0, 0 }, 0, WHITE);
 }
 
-/* Dibuja la imagen entera dentro de un alto maximo, apoyada en el piso */
-static void dibujar_enemigo(Texture2D t)
+/* Dibuja un enemigo apoyado en el borde de abajo de la imagen.
+ * escala < 1 y tinte oscuro = esta mas atras, esperando. */
+static void dibujar_enemigo(Texture2D t, float centro_x, float escala, Color tinte)
 {
-    float alto_max = 350, ancho_max = 520;
+    float alto_max = (IMG_ALTO - 14) * escala, ancho_max = 560 * escala;
     float s = fminf(alto_max / t.height, ancho_max / t.width);
     float w = t.width * s, h = t.height * s;
-    Rectangle dst = { ANCHO / 2.0f - w / 2, IMG_ALTO - h - 6, w, h };
-    DrawEllipse(ANCHO / 2, IMG_ALTO - 10, w * 0.35f, 12, Fade(BLACK, 0.5f));
-    DrawTexturePro(t, (Rectangle){ 0, 0, (float)t.width, (float)t.height }, dst, (Vector2){ 0, 0 }, 0, WHITE);
+    Rectangle dst = { centro_x - w / 2, IMG_ALTO - h, w, h };
+    DrawTexturePro(t, (Rectangle){ 0, 0, (float)t.width, (float)t.height }, dst, (Vector2){ 0, 0 }, 0, tinte);
 }
 
 /* ======================= TEXTO ======================= */
@@ -121,12 +119,6 @@ static void dibujar_enemigo(Texture2D t)
 static void texto(const char *s, float x, float y, float tam, Color c)
 {
     DrawTextEx(fuente, s, (Vector2){ x, y }, tam, 0, c);
-}
-
-static void texto_negrita(const char *s, float x, float y, float tam, Color c)
-{
-    DrawTextEx(fuente_negrita, s, (Vector2){ x + 2, y + 2 }, tam, 0, Fade(BLACK, 0.7f));
-    DrawTextEx(fuente_negrita, s, (Vector2){ x, y }, tam, 0, c);
 }
 
 static float ancho_texto(Font f, const char *s, float tam)
@@ -370,92 +362,65 @@ static void actualizar(void)
 
 /* ======================= DIBUJO ======================= */
 
-static void dibujar_barra(float x, float y, float w, float valor, float max, Color c, const char *etiqueta)
-{
-    char buf[48];
-    float frac = max > 0 ? valor / max : 0;
-    if (frac < 0) frac = 0;
-    if (frac > 1) frac = 1;
-    DrawRectangleRounded((Rectangle){ x, y, w, 20 }, 0.4f, 6, Fade(BLACK, 0.6f));
-    if (frac > 0) DrawRectangleRounded((Rectangle){ x, y, w * frac, 20 }, 0.4f, 6, c);
-    snprintf(buf, sizeof buf, "%s", etiqueta);
-    texto(buf, x + 8, y + 1, 17, WHITE);
-}
-
-static void dibujar_hud(void)
-{
-    Jugador *j = &juego.j;
-    char buf[96];
-    float x = ANCHO - 330, y = 14;
-    DrawRectangleRounded((Rectangle){ x - 12, y - 8, 330, 104 }, 0.15f, 6, Fade(BLACK, 0.55f));
-    snprintf(buf, sizeof buf, "Vida %d/%d", j->vida, j->vida_max);
-    dibujar_barra(x, y, 306, (float)j->vida, (float)j->vida_max, C_VIDA, buf);
-    snprintf(buf, sizeof buf, "Infección %d%%", j->infeccion);
-    dibujar_barra(x, y + 26, 306, (float)j->infeccion, 100, C_INFEC, buf);
-    if (j->turno <= LIMITE_HELICOPTERO) snprintf(buf, sizeof buf, "Turno %d / %d", j->turno, LIMITE_HELICOPTERO);
-    else snprintf(buf, sizeof buf, "Turno %d (el helicóptero se fue)", j->turno);
-    texto(buf, x, y + 52, 17, C_TEXTO);
-    {
-        char arma[96];
-        snprintf(arma, sizeof arma, "Arma: %s", nombre_arma_equipada(j));
-        recortar(arma, 306, 17, buf, sizeof buf);
-        texto(buf, x, y + 72, 17, C_TENUE);
-    }
-}
-
 static void dibujar_imagen(void)
 {
     Pantalla *p = &juego.pant;
     Imagen *fondo = imagen(p->imagen), *enem = imagen(p->imagen_enemigo);
+    if ((!fondo || !fondo->ok) && p->imagen_alt[0]) fondo = imagen(p->imagen_alt);   /* imagen del bioma */
     Rectangle zona = { 0, 0, ANCHO, IMG_ALTO };
 
-    if (fondo && fondo->ok) {
-        dibujar_cubriendo(fondo->tex, zona);
-    } else {
-        DrawRectangleGradientV(0, 0, ANCHO, IMG_ALTO, (Color){ 40, 40, 52, 255 }, (Color){ 12, 12, 16, 255 });
-        texto(TextFormat("(falta assets/%s.png)", p->imagen), 40, IMG_ALTO / 2.0f, 22, C_TENUE);
+    if (fondo && fondo->ok) dibujar_cubriendo(fondo->tex, zona);
+    else texto(TextFormat("(falta assets/%s.png)", p->imagen), TXT_X, IMG_ALTO / 2.0f, 18, C_APAGADO);
+
+    if (!enem && p->imagen_npc[0]) {
+        Imagen *npc = imagen(p->imagen_npc);
+        if (npc && npc->ok) dibujar_enemigo(npc->tex, ANCHO * 0.72f, 0.95f, WHITE);
     }
 
     if (enem) {
-        DrawRectangle(0, 0, ANCHO, IMG_ALTO, Fade(BLACK, 0.35f));   /* oscurecer el fondo en combate */
-        if (enem->ok) dibujar_enemigo(enem->tex);
-        else texto(TextFormat("(falta assets/%s.png)", p->imagen_enemigo), ANCHO / 2.0f - 150, 200, 22, C_TENUE);
+        /* posicion, tamaño y brillo de los que esperan detras (del mas cercano al mas lejano) */
+        static const float pos_x[MAX_COLA_VISIBLE] = { -230, 230, -420, 420 };
+        static const float escala[MAX_COLA_VISIBLE] = { 0.82f, 0.74f, 0.64f, 0.58f };
+        static const unsigned char brillo[MAX_COLA_VISIBLE] = { 70, 55, 42, 34 };
+        int k;
+        DrawRectangle(0, 0, ANCHO, IMG_ALTO, Fade(BLACK, 0.45f));   /* oscurecer el fondo en combate */
+        for (k = p->n_cola - 1; k >= 0; k--) {
+            Imagen *atras = imagen(p->imagen_cola[k]);
+            unsigned char b = brillo[k];
+            if (atras && atras->ok)
+                dibujar_enemigo(atras->tex, ANCHO / 2.0f + pos_x[k], escala[k], (Color){ b, b, b, 255 });
+        }
+        if (enem->ok) dibujar_enemigo(enem->tex, ANCHO / 2.0f, 1.0f, WHITE);
+        else texto(TextFormat("(falta assets/%s.png)", p->imagen_enemigo), ANCHO / 2.0f - 150, 200, 18, C_APAGADO);
     }
 
-    /* degradados para que se lea el titulo y la imagen se funda con el panel */
-    DrawRectangleGradientV(0, 0, ANCHO, 110, Fade(BLACK, 0.8f), Fade(BLACK, 0));
-    DrawRectangleGradientV(0, IMG_ALTO - 60, ANCHO, 60, Fade(C_PANEL, 0), C_PANEL);
-
-    {
-        char titulo[128];
-        recortar(p->titulo, p->mostrar_hud ? ANCHO - 400 : ANCHO - 60, 34, titulo, sizeof titulo);
-        texto_negrita(titulo, 30, 22, 34, WHITE);
-    }
-    if (p->mostrar_hud) dibujar_hud();
+    /* la imagen se funde con el negro de abajo */
+    DrawRectangleGradientV(0, IMG_ALTO - 80, ANCHO, 80, Fade(BLACK, 0), C_NEGRO);
 }
 
 static void dibujar_texto(void)
 {
     int visibles = lineas_visibles(), i, desde = (int)(scroll + 0.5f);
-    for (i = 0; i < visibles && desde + i < n_lineas; i++) {
-        const char *l = lineas[desde + i];
-        Color c = C_TEXTO;
-        if (l[0] == ' ' || strncmp(l, "▶", 3) == 0) c = (Color){ 236, 170, 120, 255 };   /* lo que hacen los enemigos */
-        texto(l, TXT_X, TXT_Y + i * LINEA, TAM_TEXTO, c);
-    }
+    char titulo[128];
+
+    recortar(juego.pant.titulo, TXT_W, TAM_TITULO, titulo, sizeof titulo);
+    DrawTextEx(fuente_negrita, titulo, (Vector2){ TXT_X, TITULO_Y }, TAM_TITULO, 0, C_BLANCO);
+
+    for (i = 0; i < visibles && desde + i < n_lineas; i++)
+        texto(lineas[desde + i], TXT_X, TXT_Y + i * LINEA, TAM_TEXTO, C_BLANCO);
+
     /* indicador de que hay mas texto arriba/abajo */
     if (n_lineas > visibles) {
         float total = (float)n_lineas, h = TXT_ALTO * visibles / total;
         float y = TXT_Y + (TXT_ALTO - h) * (scroll / fmaxf(1, scroll_maximo()));
-        DrawRectangleRounded((Rectangle){ TXT_X + TXT_W + 12, y, 4, h }, 1, 4, Fade(C_TENUE, 0.6f));
+        DrawRectangle(TXT_X + TXT_W + 14, (int)y, 2, (int)h, C_APAGADO);
     }
 
     if (juego.pant.pide_nombre) {
-        Rectangle caja = { TXT_X, TXT_Y + TXT_ALTO - 56, 420, 46 };
+        float y = TXT_Y + TXT_ALTO - 44;
         int parpadeo = ((int)(GetTime() * 2)) % 2;
-        DrawRectangleRounded(caja, 0.2f, 6, C_BOTON);
-        DrawRectangleRoundedLinesEx(caja, 0.2f, 6, 2, C_ACENTO);
-        texto(TextFormat("%s%s", juego.j.nombre, parpadeo ? "_" : ""), caja.x + 14, caja.y + 11, 24, WHITE);
+        texto(TextFormat("%s%s", juego.j.nombre, parpadeo ? "_" : ""), TXT_X, y, 24, C_BLANCO);
+        DrawRectangle(TXT_X, (int)y + 34, 380, 1, C_BLANCO);
     }
 }
 
@@ -470,15 +435,13 @@ static void dibujar_opciones(void)
         int es_mas = (i == n);
         int off = !es_mas && juego.pant.op[indices[i]].deshabilitada;
         int hover = !off && CheckCollisionPointRec(m, r);
-        Color fondo = off ? C_BOTON_OFF : (hover ? C_BOTON_HOV : C_BOTON);
-        Color letra = off ? (Color){ 92, 92, 102, 255 } : C_TEXTO;
+        Color letra = off ? C_APAGADO : (hover ? C_NEGRO : C_BLANCO);
 
-        DrawRectangleRounded(r, 0.25f, 6, fondo);
-        if (hover) DrawRectangle((int)r.x, (int)r.y + 4, 4, (int)r.height - 8, C_ACENTO);
-        texto(TextFormat("%d", i + 1), r.x + 14, r.y + 6, TAM_OPCION, off ? letra : C_ACENTO);
-        if (es_mas) snprintf(buf, sizeof buf, "Más opciones ▶ (%d/%d)", pagina + 1, total_paginas());
-        else recortar(juego.pant.op[indices[i]].texto, r.width - 52, TAM_OPCION, buf, sizeof buf);
-        texto(buf, r.x + 40, r.y + 6, TAM_OPCION, es_mas ? C_TENUE : letra);
+        if (hover) DrawRectangleRec(r, C_BLANCO);   /* resaltado: se invierte */
+        texto(TextFormat("%d", i + 1), r.x + 12, r.y + 6, TAM_OPCION, letra);
+        if (es_mas) snprintf(buf, sizeof buf, "Más (%d/%d)", pagina + 1, total_paginas());
+        else recortar(juego.pant.op[indices[i]].texto, r.width - 56, TAM_OPCION, buf, sizeof buf);
+        texto(buf, r.x + 44, r.y + 6, TAM_OPCION, letra);
     }
 }
 
@@ -491,16 +454,15 @@ static void dibujar(void)
     /* mezclar el color normalmente pero dejar el lienzo opaco */
     rlSetBlendFactorsSeparate(RL_SRC_ALPHA, RL_ONE_MINUS_SRC_ALPHA, RL_ONE, RL_ONE_MINUS_SRC_ALPHA, RL_FUNC_ADD, RL_FUNC_ADD);
     BeginBlendMode(BLEND_CUSTOM_SEPARATE);
-    ClearBackground(C_PANEL);
+    ClearBackground(C_NEGRO);
     dibujar_imagen();
-    DrawLine(OPC_X - 16, IMG_ALTO + 14, OPC_X - 16, ALTO - 14, (Color){ 44, 44, 54, 255 });
     dibujar_texto();
     dibujar_opciones();
     EndBlendMode();
     EndTextureMode();
 
     BeginDrawing();
-    ClearBackground(C_FONDO);
+    ClearBackground(C_NEGRO);
     DrawTexturePro(lienzo.texture, (Rectangle){ 0, 0, ANCHO, -ALTO },
                    (Rectangle){ o.x, o.y, ANCHO * s, ALTO * s }, (Vector2){ 0, 0 }, 0, WHITE);
     EndDrawing();
@@ -517,7 +479,7 @@ static void cuadro(void)
 static Font cargar_fuente(const char *ruta)
 {
     /* ASCII + acentos, eñe y simbolos que usa el juego */
-    static const char *extra = "áéíóúÁÉÍÓÚñÑüÜ¿¡°·—–…▶◀✔∞“”";
+    static const char *extra = "áéíóúÁÉÍÓÚñÑüÜ¿¡°·—–…▶◀✔∞“”«»›";
     int n_extra = 0, i, total;
     int *cp_extra = LoadCodepoints(extra, &n_extra);
     int *cps = (int *)malloc(sizeof(int) * (95 + n_extra));
@@ -540,10 +502,10 @@ int main(void)
     srand((unsigned)time(NULL));
 
 #if defined(PLATFORM_WEB)
-    InitWindow(ANCHO, ALTO, "Escape de la Ciudad");
+    InitWindow(ANCHO, ALTO, "Escape Corpus Christi");
 #else
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT);
-    InitWindow(ANCHO, ALTO, "Escape de la Ciudad");
+    InitWindow(ANCHO, ALTO, "Escape Corpus Christi");
     SetWindowMinSize(640, 360);
     ChangeDirectory(GetApplicationDirectory());   /* para encontrar la carpeta assets */
 #endif

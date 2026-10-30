@@ -8,8 +8,8 @@
 
 const ItemDef ITEMS[NUM_ITEMS] = {
     /*                         nombre                       tipo        rareza      valor usos anti mun */
-    [IT_NAVAJA]            = {"Navaja de Bolsillo",        T_MELEE,    R_COMUN,      2, -1,   0, -1},
-    [IT_CUCHILLO]          = {"Cuchillo de Cocina",        T_MELEE,    R_COMUN,      7, 10,   0, -1},
+    [IT_NAVAJA]            = {"Navaja de Bolsillo",        T_MELEE,    R_COMUN,     10, -1,   0, -1},   /* documento: 2 */
+    [IT_CUCHILLO]          = {"Cuchillo de Cocina",        T_MELEE,    R_COMUN,     14, 10,   0, -1},   /* documento: 7 */
     [IT_HACHA]             = {"Hacha de Bombero",          T_MELEE,    R_RARO,      15, 30,   0, -1},
     [IT_MACHETE]           = {"Machete",                   T_MELEE,    R_EPICO,     20, 15,   0, -1},
     [IT_CINTA]             = {"Cinta",                     T_MATERIAL, R_COMUN,      5,  0,   0, -1},
@@ -229,12 +229,11 @@ int cantidad_loot(int id)
 
 void recibir_loot(Juego *g, int id, int cant)
 {
-    if (cant > 1)
-        log_msg(g, "  + %s x%d  [%s]\n", ITEMS[id].nombre, cant, NOMBRE_RAREZA[ITEMS[id].rareza]);
-    else
-        log_msg(g, "  + %s  [%s]\n", ITEMS[id].nombre, NOMBRE_RAREZA[ITEMS[id].rareza]);
+    if (cant > 1) log_msg(g, "  · %s x%d\n", ITEMS[id].nombre, cant);
+    else          log_msg(g, "  · %s\n", ITEMS[id].nombre);
+    log_num(g, "    [%s]\n", NOMBRE_RAREZA[ITEMS[id].rareza]);
     if (agregar_item(&g->j, id, cant) < 0)
-        log_msg(g, "    (Tu inventario está lleno, lo dejaste ahí.)\n");
+        log_msg(g, "    (No te entra nada más. Lo dejás ahí.)\n");
 }
 
 /* ---------------- Uso de items ---------------- */
@@ -248,23 +247,26 @@ int usar_item(Juego *g, int s)
 
     switch (ITEMS[id].tipo) {
     case T_CURA:
-        if (j->vida >= j->vida_max) { log_msg(g, "Ya tenés la vida al máximo.\n"); return 0; }
+        if (j->vida >= j->vida_max) { log_msg(g, "No estás herido.\n"); return 0; }
         j->vida = minimo(j->vida_max, j->vida + ITEMS[id].valor);
-        log_msg(g, "Usaste %s. Vida: %d/%d\n", ITEMS[id].nombre, j->vida, j->vida_max);
+        log_msg(g, "Usás %s. Te sentís un poco mejor.\n", ITEMS[id].nombre);
+        log_num(g, "  [vida %d/%d]\n", j->vida, j->vida_max);
         quitar_slot(j, s, 1);
         return 1;
     case T_MEJORA:
         if (id == IT_VACUNA) {
             j->vida_max += 50; j->vida += 50;
-            log_msg(g, "Te inyectás la vacuna. Vida máxima +50 (Vida: %d/%d)\n", j->vida, j->vida_max);
+            log_msg(g, "Te inyectás la vacuna. Un calor te recorre el cuerpo entero.\n");
+            log_num(g, "  [vida %d/%d]\n", j->vida, j->vida_max);
         } else if (id == IT_SUERO) {
             j->fuerza += 15;
-            log_msg(g, "El suero te recorre las venas. Fuerza +15 (Fuerza: %d)\n", j->fuerza);
+            log_msg(g, "El suero quema al entrar. Tus manos dejan de temblar.\n");
+            log_num(g, "  [fuerza %d]\n", j->fuerza);
         } else if (id == IT_CURA_TEMPRANA) {
             j->infeccion = 0;
-            log_msg(g, "Te aplicás la Cura Temprana. Infección: 0%%\n");
+            log_msg(g, "Te aplicás la Cura Temprana. La fiebre baja.\n");
         } else {
-            log_msg(g, "%s es un ítem pasivo: funciona solo con tenerlo.\n", ITEMS[id].nombre);
+            log_msg(g, "%s no se usa: sirve con tenerlo encima.\n", ITEMS[id].nombre);
             return 0;
         }
         quitar_slot(j, s, 1);
@@ -281,8 +283,7 @@ int reparar_arma(Juego *g, int s)
     int m = g->slot_material;
     const ItemDef *arma = &ITEMS[j->inv[s].id];
     j->inv[s].usos = minimo(arma->usos, j->inv[s].usos + ITEMS[j->inv[m].id].valor);
-    log_msg(g, "Reparaste tu %s con %s. Usos: %d/%d\n",
-            arma->nombre, ITEMS[j->inv[m].id].nombre, j->inv[s].usos, arma->usos);
+    log_msg(g, "Reparás tu %s con %s.\n", arma->nombre, ITEMS[j->inv[m].id].nombre);
     quitar_slot(j, m, 1);
     return 1;
 }

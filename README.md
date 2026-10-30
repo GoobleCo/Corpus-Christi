@@ -1,7 +1,11 @@
-# Escape de la Ciudad
+# Escape Corpus Christi
 
 Juego de texto por turnos, estilo novela visual, hecho en **C** con [raylib](https://www.raylib.com/).
 Estás en una ciudad llena de infectados y tenés que llegar al helicóptero de H.E.R.O. para escapar.
+
+El juego no se lo dice al jugador: los enemigos se describen como "figuras" o "lo que acecha",
+el helicóptero solo se insinúa con el sonido de unas aspas, y no se muestran números
+(la vida y la infección solo aparecen en **Ver estado**). Fuera de las imágenes, todo es blanco sobre negro.
 
 ## Cómo jugar
 
@@ -18,9 +22,10 @@ arrastrar o usar la rueda del mouse.
 
 ```
 +--------------------------------------------------+
-|  IMAGEN del bloque (+ enemigo encima)       HUD  |
+|  IMAGEN del bloque (+ enemigo encima)            |
 +-----------------------------+--------------------+
-|  DESCRIPCIÓN / lo que pasó  |  OPCIONES 1..8     |
+|  TÍTULO                     |  1  opción         |
+|  descripción / lo que pasó  |  2  opción  ...    |
 +-----------------------------+--------------------+
 ```
 
@@ -39,6 +44,7 @@ arrastrar o usar la rueda del mouse.
 
 La lógica no depende de raylib: cada estado del juego arma una *Pantalla* (imagen + texto + opciones)
 y `main.c` solamente la dibuja. Para esconder el menú de debug, poné `DEBUG_HABILITADO` en `0` en `src/juego.h`.
+En el menú de debug, **Mostrar números** muestra entre [corchetes] las tiradas, el daño y la vida de los enemigos.
 
 ## Poner tus propias imágenes
 
@@ -46,13 +52,20 @@ Las imágenes que vienen son **de prueba**. Reemplazá cualquier PNG por el tuyo
 
 | Carpeta | Tamaño recomendado | Notas |
 |---|---|---|
-| `assets/bloques/` | 1280 × 400 | Se recorta para cubrir la zona de la imagen |
+| `assets/biomas/` | 1280 × 400 | Imagen genérica por tipo de lugar: `calle`, `callejon`, `checkpoint`, `subte`, `tunel`, `alcantarilla`, `puerto`, `galpon` |
+| `assets/npc/` | ~600 × 700 | `soldado_hero.png`: aparece en los checkpoints con guardia y en la Universidad (no ataca) |
+| `assets/lugares/` | 1280 × 400 | Imagen propia de un bloque; si no existe, se usa la de su bioma |
 | `assets/enemigos/` | ~600 × 700 | **Con fondo transparente**; se dibuja encima del bloque |
 | `assets/finales/` | 1280 × 400 | Una por final |
 | `assets/portada.png` | 1280 × 400 | Pantalla del nombre y la clase |
 
-Enemigos: `infectado_comun.png`, `policia_infectado.png`, `stalker.png`, `vandalo.png`.
+Enemigos (cada uno elige al azar entre sus variantes; los que esperan su turno se ven detrás, más chicos y oscurecidos):
+`infectado_comun.png` / `infectado_comun_2.png`, `policia_infectado.png` / `policia_infectado_2.png`, `stalker.png`,
+y los Vándalos según su arma: `vandalo.png` (pistola), `vandalo_escopeta.png` (escopeta y armas blancas), `vandalo_m16.png` (M16).
 Finales: `helicoptero.png`, `tren.png`, `bote.png`, `cuarentena.png`, `infeccion_tardia.png`, `muerte.png`, `convertido.png`.
+
+Los biomas de cada bloque están en la tabla `BIOMA` de `src/mapa.c`. Para darle una imagen propia a una
+calle, alcanza con poner `assets/lugares/<nombre>.png`.
 
 Si borrás una imagen, el juego igual anda y muestra qué archivo falta. Para volver a crear las de prueba que falten:
 `python3 herramientas/generar_imagenes.py`.
@@ -60,7 +73,7 @@ Si borrás una imagen, el juego igual anda y muestra qué archivo falta. Para vo
 <details>
 <summary>Imágenes de los 53 bloques</summary>
 
-| Archivo (en `assets/bloques/`) | Bloque | Color | Subterráneo |
+| Archivo (en `assets/lugares/`) | Bloque | Color | Subterráneo |
 |---|---|---|---|
 | `inicio.png` | Inicio | Celeste |  |
 | `calle_norte_1.png` | Calle Norte 1 | Verde |  |
@@ -123,14 +136,46 @@ Si borrás una imagen, el juego igual anda y muestra qué archivo falta. Para vo
 - **Mapa:** se puede ir y volver por cualquier conexión. Los checkpoints de H.E.R.O. revisan la infección
   (más de 30 = final *Cuarentena*) y solo te dejan pasar al otro lado con el **Pase de Prioridad**.
   El Metro Norte, el Callejón y el Guarda Barcos / Puerto Destruido son caminos que esquivan los checkpoints.
+- **Pruebas de fuerza:** los atajos que esquivan un checkpoint tienen un obstáculo que solo se abre con fuerza
+  (una vez abierto, queda abierto). Si no te alcanza, perdés un turno intentándolo.
+
+  | Atajo | Obstáculo | Fuerza |
+  |---|---|---|
+  | Metro Norte ↔ Calle Norte 3 | puerta de servicio | 20 |
+  | Callejón ↔ Tren | reja con cadena | 20 |
+  | Guarda Barcos ↔ Puerto | portón de chapa | 15 |
+  | Puerto Destruido ↔ Puerto | grúa caída | 15 |
+
+  Fuerza por clase: Bombero 20, Policía 15, Paramédico 5, Vago 0 (el Suero de H.E.R.O. suma 15). Se cambia en `src/mapa.c`.
 - **Callejones sin salida:** Bloqueo, Estadio, Checkpoint Este (cerrado) y Aeropuerto. En el **Aeropuerto no se puede escapar** de un combate.
 - **Ítems garantizados:** Navaja en el Inicio, Botiquín en el Hospital y Pase de Prioridad en el Estadio.
 - **Peligro oculto:** sin el Mapa Satelital no ves el color/peligro de los bloques a los que vas.
 - **Sin arma** peleás a puños (5 de daño + fuerza).
-- **Violeta:** 8 a 10 infectados por evento. Los Vándalos vienen en grupos más chicos (1 a 4) porque tienen armas de fuego, y sueltan su arma al morir.
+- **Vándalos:** sueltan su arma al morir.
 - **Ruido:** cada disparo tiene 25 % de chance de atraer otro enemigo.
 - **Turnos:** moverse y cada combate cuentan un turno. El helicóptero espera hasta el turno 20; después se va y quedan el tren y el barco.
 - Agregué dos finales de derrota: **Muerte** (vida en 0) y **Convertido** (infección en 100).
+
+## Balance
+
+Todos los números para ajustar la dificultad están juntos al principio de `src/juego.h` (sección BALANCE);
+las cantidades de enemigos por color están en `src/enemigos.c`. Cambios respecto al documento:
+
+| Qué | Documento | Juego |
+|---|---|---|
+| Infectados por evento | Verde 1–3, Naranja 4–5, Rojo 6–8 | Verde 1–2, Naranja 2–3, Rojo 3–4, Violeta 4–6 |
+| Golpe | 15 daño, 10 infección | 12 daño; contagia solo el 35 % de las veces |
+| Mordida | 20 daño, 20 infección | 16 daño, 20 infección (siempre contagia) |
+| Salto del Stalker | 25 daño | 18 daño; contagia el 50 % de las veces |
+| Armadura | resta el daño | resta el daño, pero siempre pasa al menos el 40 % |
+| Horda | — | mientras peleás con uno, hasta 2 de los que esperan pueden alcanzarte (30 % c/u) |
+| Vándalo | 45 vida, 9 armadura | 30 vida, 4 armadura; con armas de fuego pega el 40 % del daño |
+| Navaja / Cuchillo | 2 / 7 daño | 10 / 14 daño |
+| Vago | Barbijo, Materiales | + Cuchillo de Cocina |
+
+Para medir la dificultad hay un bot que juega "bien" (camino más corto, revisa todo, se cura):
+`gcc -std=c99 -O2 tests/bot.c src/items.c src/enemigos.c src/mapa.c src/finales.c src/logica.c src/debug.c -o bot && ./bot 2000 heli`
+(el destino puede ser `heli`, `barco` o `tren`).
 
 ## Compilar en una computadora
 

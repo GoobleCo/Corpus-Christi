@@ -49,8 +49,7 @@ static const char *TEXTOS[NUM_FINALES] = {
         "Caíste en las calles de la ciudad. Uno más entre los miles que no llegaron a ver "
         "el amanecer.",
     [F_CONVERTIDO] =
-        "La fiebre te consume. Tus pensamientos se apagan uno por uno, hasta que solo "
-        "queda el hambre.",
+        "No sobreviviste. Simplemente sos otro más de la horda.",
 };
 
 const char *final_titulo(Final f) { return TITULOS[f]; }

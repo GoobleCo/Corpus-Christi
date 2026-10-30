@@ -1,5 +1,5 @@
 /*
- * ESCAPE DE LA CIUDAD - tipos y funciones compartidas por todos los modulos.
+ * ESCAPE CORPUS CHRISTI - tipos y funciones compartidas por todos los modulos.
  *
  * La logica del juego (items.c, enemigos.c, mapa.c, finales.c, logica.c,
  * debug.c) NO usa raylib: solo arma una "Pantalla" (imagen + texto +
@@ -15,10 +15,34 @@
 #define MAX_NOMBRE         24
 #define MAX_ENEMIGOS       14
 #define MAX_CONEXIONES     8
-#define LIMITE_HELICOPTERO 20
-#define LIMITE_CUARENTENA  30
+/* ======================= BALANCE =======================
+ * Todos los numeros para ajustar la dificultad estan aca
+ * (y las cantidades de enemigos en enemigos.c). */
+#define LIMITE_HELICOPTERO 20    /* turno en el que se va el helicoptero */
+#define LIMITE_CUARENTENA  30    /* infeccion maxima para pasar un checkpoint */
 #define DANIO_PUNOS        5
 #define CHANCE_RUIDO       25    /* % de que un disparo atraiga otro enemigo */
+
+#define VIDA_COMUN         40    /* Infectado Comun */
+#define VIDA_POLICIA       50    /* Policia Infectado */
+#define GOLPE_DANIO        12    /* (documento: 15) */
+#define GOLPE_INFEC        10
+#define GOLPE_CONTAGIO     35    /* % de que un golpe contagie (la mordida siempre contagia) */
+#define MORDIDA_DANIO      16    /* (documento: 20) */
+#define MORDIDA_INFEC      20
+#define SALTO_DANIO        18    /* Stalker (documento: 25) */
+#define SALTO_INFEC        10
+#define SALTO_CONTAGIO     50
+#define VIDA_VANDALO       30    /* (documento: 45) */
+#define ARMADURA_VANDALO   4     /* (documento: 9) */
+#define VANDALO_FUEGO_PCT  40    /* los vandalos pegan este % del daño de su arma de fuego */
+/* Horda: mientras peleas con uno, hasta HORDA_MAX de los que esperan
+ * pueden alcanzarte cada turno (cada uno con HORDA_CHANCE %). Solo infectados. */
+#define ARMADURA_MIN_PCT   40    /* la armadura nunca frena mas del 60% de un golpe */
+#define HORDA_MAX          2
+#define HORDA_CHANCE       30
+
+#define MAX_COLA_VISIBLE   4     /* enemigos que se ven detras del que pelea */
 #define MAX_OPCIONES       48
 #define TEXTO_MAX          6000
 #define MSG_MAX            4000
@@ -83,7 +107,8 @@ typedef enum { EN_COMUN, EN_POLICIA, EN_STALKER, EN_VANDALO } TipoEnemigo;
 
 typedef struct {
     TipoEnemigo tipo;
-    const char *nombre;
+    const char *nombre;         /* nombre real (solo se ve en modo debug) */
+    const char *percibido;      /* como lo describe el juego: "una figura" */
     const char *slug;           /* imagen: assets/enemigos/<slug>.png */
     int vida, vida_max, fuerza, armadura;
     int cd_salto, cd_evasion, evadiendo;   /* Stalker */
@@ -110,7 +135,7 @@ typedef enum {
 } Especial;
 
 typedef struct {
-    const char *slug;           /* imagen: assets/bloques/<slug>.png */
+    const char *slug;           /* imagen: assets/lugares/<slug>.png */
     const char *nombre;
     ColorBloque color;
     int subterraneo;
@@ -145,6 +170,23 @@ enum {
 };
 
 extern Bloque mapa[NUM_BLOQUES];
+extern const char *BIOMA[NUM_BLOQUES];   /* imagen generica: assets/biomas/<bioma>.png */
+
+/* Pasos que esquivan un checkpoint: hay un obstaculo que solo se abre
+ * con cierta fuerza. Una vez abierto queda abierto (en los dos sentidos). */
+typedef struct {
+    int a, b;                 /* bloques que une */
+    int fuerza;               /* fuerza necesaria */
+    const char *obstaculo;    /* se agrega a la opcion despues de fallar: "la puerta no cede" */
+    const char *falla;        /* texto si no tenes fuerza */
+    const char *exito;        /* texto si la abris */
+    int abierto;
+    int intentado;
+} Paso;
+
+#define NUM_PASOS 4
+extern Paso pasos[NUM_PASOS];
+Paso *buscar_paso(int a, int b);
 extern const char *NOMBRE_COLOR[5];
 extern const int PELIGRO_COLOR[5];
 
@@ -164,14 +206,17 @@ typedef struct {
 } Opcion;
 
 typedef struct {
-    char imagen[64];          /* ej: "bloques/inicio" -> assets/bloques/inicio.png */
+    char imagen[64];          /* ej: "lugares/inicio" -> assets/lugares/inicio.png */
+    char imagen_alt[64];      /* si falta la imagen, se usa esta (la del bioma) */
     char imagen_enemigo[64];  /* vacio = no hay enemigo */
+    char imagen_npc[64];      /* personaje que no ataca (soldado de H.E.R.O.) */
+    char imagen_cola[MAX_COLA_VISIBLE][64];   /* los que esperan detras */
+    int n_cola;
     char titulo[96];
     char texto[TEXTO_MAX];
     Opcion op[MAX_OPCIONES];
     int n_op;
     int pide_nombre;          /* la UI deja escribir el nombre */
-    int mostrar_hud;
     int version;              /* cambia cada vez que se arma una pantalla nueva */
 } Pantalla;
 
@@ -200,7 +245,9 @@ typedef struct {
 
 /* ---------- utilidades (logica.c) ---------- */
 extern int d20_fijo;
+extern int ver_numeros;   /* debug: mostrar tiradas, daño y vida en los mensajes */
 int  azar(int min, int max);
+void log_num(Juego *g, const char *fmt, ...);   /* solo se muestra con ver_numeros */
 int  tirar_d20(void);
 int  minimo(int a, int b);
 int  maximo(int a, int b);
@@ -240,6 +287,7 @@ int  cantidad_enemigos(int color, int subterraneo);
 void aplicar_danio(Juego *g, int d);
 void aplicar_infeccion(Juego *g, int ixi);
 int  turno_enemigo(Juego *g, Enemigo *e);    /* 1 = el enemigo se fue */
+void ataque_horda(Juego *g);
 
 /* ---------- mapa.c ---------- */
 void iniciar_mapa(void);
