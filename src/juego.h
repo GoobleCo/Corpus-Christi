@@ -39,6 +39,7 @@
 /* Horda: mientras peleas con uno, hasta HORDA_MAX de los que esperan
  * pueden alcanzarte cada turno (cada uno con HORDA_CHANCE %). Solo infectados. */
 #define ARMADURA_MIN_PCT   40    /* la armadura nunca frena mas del 60% de un golpe */
+#define CHANCE_PATRULLA    6     /* % de cruzarse una patrulla de H.E.R.O. (una vez por partida) */
 #define HORDA_MAX          2
 #define HORDA_CHANCE       30
 
@@ -170,7 +171,8 @@ enum {
 };
 
 extern Bloque mapa[NUM_BLOQUES];
-extern const char *BIOMA[NUM_BLOQUES];   /* imagen generica: assets/biomas/<bioma>.png */
+extern const char *BIOMA[NUM_BLOQUES];
+extern const char *VISTO[NUM_BLOQUES];   /* como se ve desde un bloque vecino */
 
 /* Pasos que esquivan un checkpoint: hay un obstaculo que solo se abre
  * con cierta fuerza. Una vez abierto queda abierto (en los dos sentidos). */
@@ -209,7 +211,8 @@ typedef struct {
     char imagen[64];          /* ej: "lugares/inicio" -> assets/lugares/inicio.png */
     char imagen_alt[64];      /* si falta la imagen, se usa esta (la del bioma) */
     char imagen_enemigo[64];  /* vacio = no hay enemigo */
-    char imagen_npc[64];      /* personaje que no ataca (soldado de H.E.R.O.) */
+    char imagen_npc[64];      /* soldado de H.E.R.O. (a la derecha, no ataca) */
+    char imagen_npc2[64];     /* cientifico de H.E.R.O. (a la izquierda) */
     char imagen_cola[MAX_COLA_VISIBLE][64];   /* los que esperan detras */
     int n_cola;
     char titulo[96];
@@ -223,7 +226,7 @@ typedef struct {
 /* ============================ JUEGO ============================ */
 
 typedef enum {
-    E_NOMBRE, E_CLASE, E_BLOQUE, E_MOVER, E_INVENTARIO, E_USAR, E_REPARAR,
+    E_NOMBRE, E_CLASE, E_RADIO, E_BLOQUE, E_MOVER, E_INVENTARIO, E_USAR, E_REPARAR,
     E_ESTADO, E_COMBATE, E_FINAL,
     E_DEBUG, E_DEBUG_ITEMS, E_DEBUG_CANT, E_DEBUG_STATS, E_DEBUG_D20, E_DEBUG_TP
 } Estado;
@@ -239,6 +242,10 @@ typedef struct {
     int debug_item;
     Final final;
     int quiere_salir;
+    int patrulla;             /* la patrulla de H.E.R.O. esta en pantalla */
+    int patrulla_usada;       /* la patrulla aparece una sola vez por partida */
+    int charla_soldado;       /* proxima linea de dialogo de cada NPC */
+    int charla_cientifico;
     char msg[MSG_MAX];        /* lo que acaba de pasar */
     Pantalla pant;
 } Juego;

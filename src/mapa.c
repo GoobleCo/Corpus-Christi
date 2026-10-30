@@ -16,8 +16,7 @@ const int PELIGRO_COLOR[5] = {0, 8, 13, 16, 20};
 /*  slug, nombre, color, subterraneo, especial, protegido, item garantizado, descripcion */
 Bloque mapa[NUM_BLOQUES] = {
     [B_INICIO] = {"inicio", "Inicio", C_CELESTE, 0, ESP_INICIO, -1, IT_NAVAJA,
-        "El refugio improvisado donde pasaste la noche. La radio repite un mensaje de "
-        "evacuación entre estática."},
+        "El galpón donde pasaste la noche. La radio sigue repitiendo el mismo comunicado."},
 
     /* ---------------- NORTE ---------------- */
     [B_CN1] = {"calle_norte_1", "Calle Norte 1", C_VERDE, 0, ESP_NINGUNO, -1, -1,
@@ -105,9 +104,11 @@ Bloque mapa[NUM_BLOQUES] = {
 
     /* ---------------- ESTE ---------------- */
     [B_CE1] = {"calle_este_1", "Calle Este 1", C_VERDE, 0, ESP_NINGUNO, -1, -1,
-        "Bicicletas tiradas y un puesto de diarios dado vuelta."},
+        "Bicicletas tiradas y un puesto de diarios dado vuelta. En una pared, alguien pintó una flecha "
+        "hacia el este: «AEROPUERTO - VUELOS»."},
     [B_CE2] = {"calle_este_2", "Calle Este 2", C_NARANJA, 0, ESP_NINGUNO, -1, -1,
-        "Patrulleros abandonados con las sirenas apagadas."},
+        "Patrulleros abandonados con las sirenas apagadas. Uno tiene la radio prendida: «...desvíen a los "
+        "civiles al aeropuerto...» y después estática."},
     [B_CHECK_E] = {"checkpoint_este", "H.E.R.O. Checkpoint (cerrado)", C_ROJO, 0, ESP_NINGUNO, -1, -1,
         "Las vallas están soldadas y no hay nadie. Quien estuviera acá se fue hace rato."},
     [B_TURISTA1] = {"calle_turista_1", "Calle Turista 1", C_NARANJA, 0, ESP_NINGUNO, -1, -1,
@@ -115,13 +116,17 @@ Bloque mapa[NUM_BLOQUES] = {
     [B_TURISTA2] = {"calle_turista_2", "Calle Turista 2", C_ROJO, 0, ESP_NINGUNO, -1, -1,
         "Un micro de turistas volcado. Sus pasajeros siguen cerca."},
     [B_HOTEL] = {"hotel", "Hotel", C_ROJO, 0, ESP_NINGUNO, -1, -1,
-        "El lobby es un desastre. Se escuchan golpes en los pisos de arriba."},
+        "El lobby es un desastre. Se escuchan golpes en los pisos de arriba. En la recepción hay un cartel "
+        "escrito a mano: «Huéspedes: traslado al aeropuerto cada hora»."},
     [B_ESTACIONAMIENTO] = {"estacionamiento", "Estacionamiento", C_VERDE, 0, ESP_NINGUNO, -1, -1,
-        "Un subsuelo de autos. Algunos todavía tienen las llaves puestas."},
+        "Un subsuelo de autos. Algunos todavía tienen las llaves puestas. Faltan muchos: las marcas de "
+        "neumáticos salen todas hacia la autopista del aeropuerto."},
     [B_CE3] = {"calle_este_3", "Calle Este 3", C_ROJO, 0, ESP_NINGUNO, -1, -1,
-        "La autopista hacia el aeropuerto, cubierta de autos chocados."},
+        "La autopista hacia el aeropuerto, cubierta de autos chocados, todos apuntando al mismo lado. "
+        "Un cartel luminoso parpadea: «EVACUACIÓN - TERMINAL A»."},
     [B_AEROPUERTO] = {"aeropuerto", "Aeropuerto", C_ROJO, 0, ESP_SIN_ESCAPE, -1, -1,
-        "No hay aviones. Solo una terminal a oscuras y un olor dulce, espeso."},
+        "Los carteles de «EVACUACIÓN» siguen encendidos, pero no hay aviones. Solo una terminal a oscuras, "
+        "llena de valijas, y un olor dulce, espeso."},
     [B_NE_METRO] = {"northeast_metro", "Northeast Metro", C_VERDE, 1, ESP_NINGUNO, -1, -1,
         "Un andén silencioso. Las luces de emergencia parpadean."},
     [B_TUNEL_B] = {"tunel_b", "Túnel de Mantenimiento B", C_NARANJA, 1, ESP_NINGUNO, -1, -1,
@@ -130,6 +135,67 @@ Bloque mapa[NUM_BLOQUES] = {
         "Un derrumbe tapa el túnel por completo. No se puede seguir."},
     [B_CALLEJONES_E1] = {"callejones_este_1", "Callejones Este 1", C_NARANJA, 0, ESP_NINGUNO, -1, -1,
         "Escaleras de incendio y ropa colgada. Una salida del túnel da acá."},
+};
+
+/* Como se ve cada bloque desde uno vecino. Se usa para describir las salidas. */
+const char *VISTO[NUM_BLOQUES] = {
+    [B_INICIO]          = "el galpón donde pasaste la noche",
+
+    [B_CN1]             = "una calle con autos abandonados que va hacia el norte",
+    [B_CN2]             = "una avenida más ancha; al fondo, reflectores",
+    [B_CHECK_N]         = "las vallas y los reflectores de un puesto de H.E.R.O.",
+    [B_CN3]             = "una calle limpia y patrullada, del otro lado de las vallas",
+    [B_UNIVERSIDAD]     = "el campus de la Universidad, lleno de soldados",
+    [B_HELIPUERTO]      = "las escaleras que suben a la terraza",
+    [B_METRO_NORTE]     = "la boca de una estación de subte sin terminar",
+    [B_TUNEL_A]         = "un túnel de mantenimiento",
+    [B_MALL]            = "la entrada del shopping, a oscuras",
+    [B_CALLEJONES_N1]   = "un pasillo angosto entre edificios",
+    [B_CALLEJONES_N2]   = "más pasillos, que se meten entre los edificios",
+    [B_ESTADIO]         = "los portones del estadio",
+
+    [B_NW_METRO]        = "las escaleras del subte, hacia el noroeste",
+    [B_FABRICA]         = "el portón de una fábrica",
+    [B_DISTRITO]        = "las oficinas del distrito comercial",
+    [B_HOSPITAL]        = "la entrada del hospital",
+    [B_CALLEJON]        = "un callejón detrás del hospital, hacia las vías",
+    [B_CO1]             = "una avenida ancha hacia el oeste",
+    [B_CO2]             = "una calle cortada por un colectivo",
+    [B_CHECK_O]         = "un puesto de H.E.R.O. junto a las vías",
+    [B_TREN]            = "la estación de tren",
+    [B_SW_METRO]        = "las escaleras del subte, hacia el suroeste",
+    [B_TUNEL_D]         = "un túnel lleno de grafitis",
+    [B_HIDEOUT]         = "un pasillo con luz de fogatas y voces",
+    [B_TUNEL_C]         = "un túnel donde el agua empieza a subir",
+    [B_INUNDACION]      = "un tramo inundado",
+    [B_ALC1]            = "una boca de alcantarilla",
+    [B_ALC2]            = "las alcantarillas, más adentro",
+    [B_ALC3]            = "un canal que huele a mar",
+    [B_PUERTO_DESTRUIDO]= "una salida a un muelle derrumbado",
+
+    [B_CS1]             = "una calle hacia el sur",
+    [B_CS2]             = "una barricada abandonada",
+    [B_CS3]             = "la última calle antes del puerto",
+    [B_CHECK_S]         = "una muralla de contenedores con soldados",
+    [B_PUERTO]          = "el puerto, donde todavía hay un barco",
+    [B_BARCO]           = "la pasarela del barco",
+    [B_INVERNADERO]     = "un invernadero de vidrio",
+    [B_ALMACEN]         = "un depósito lleno de cajas",
+    [B_GUARDA_BARCOS]   = "un galpón de lanchas, junto al agua",
+
+    [B_CE1]             = "una calle hacia el este",
+    [B_CE2]             = "una calle con patrulleros abandonados",
+    [B_CHECK_E]         = "un puesto de control, aparentemente vacío",
+    [B_TURISTA1]        = "una calle de restaurantes",
+    [B_TURISTA2]        = "una calle con un micro volcado",
+    [B_HOTEL]           = "la entrada de un hotel",
+    [B_ESTACIONAMIENTO] = "la rampa de un estacionamiento",
+    [B_CE3]             = "la autopista hacia el aeropuerto; hay carteles de evacuación",
+    [B_AEROPUERTO]      = "la terminal del aeropuerto, con carteles de «EVACUACIÓN» encendidos",
+    [B_NE_METRO]        = "las escaleras del subte, hacia el noreste",
+    [B_TUNEL_B]         = "un túnel de servicio",
+    [B_BLOQUEO]         = "un túnel que parece tapado más adelante",
+    [B_CALLEJONES_E1]   = "un callejón con escaleras de incendio",
 };
 
 /* Bioma de cada bloque: si no existe assets/lugares/<slug>.png, se usa

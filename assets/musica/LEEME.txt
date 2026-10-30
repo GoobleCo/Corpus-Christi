@@ -1,0 +1,8 @@
+Música del juego (formato .ogg). Si falta un archivo, ese momento queda en silencio.
+
+  paz.ogg       zonas de H.E.R.O. (celestes), el inicio y la portada   -> Peace of Mind
+  incierto.ogg  bloques con peligro                                     -> Uncertain Mind
+  combate.ogg   durante un combate (si falta, sigue sonando incierto)
+  final.ogg     pantalla de final
+
+Se silencia con la tecla M o tocando la nota (♪) arriba a la derecha.

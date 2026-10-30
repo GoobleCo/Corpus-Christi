@@ -125,7 +125,7 @@ static const char *NOMBRES_AZAR[] = {"Lucía", "Mateo", "Valen", "Sofi", "Nico",
 
 /* Acciones de las opciones */
 enum { VOLVER = -1 };
-enum { A_LOOT = 1, A_MOVER, A_INV, A_USAR, A_ESTADO, A_DEBUG };
+enum { A_LOOT = 1, A_MOVER, A_INV, A_USAR, A_ESTADO, A_DEBUG, A_HABLAR_SOLDADO, A_HABLAR_CIENTIFICO };
 enum { CA_ATACAR = 1, CA_USAR, CA_INV, CA_ESCAPAR, CA_DEBUG };
 
 /* =========================== JUEGO NUEVO =========================== */
@@ -153,8 +153,7 @@ static void elegir_clase(Juego *g, int c)
         agregar_item(j, CLASES[c].items[k], CLASES[c].cant[k]);
     j->bloque_actual = B_INICIO;
     j->turno = 0;
-    g->estado = E_BLOQUE;
-    log_msg(g, "La radio sigue repitiendo lo mismo. Nadie dice hasta cuándo van a esperar.\n");
+    g->estado = E_RADIO;
 }
 
 /* =========================== MUERTE =========================== */
@@ -366,21 +365,59 @@ static void lootear(Juego *g)
     }
 }
 
+static int paso_bloqueado(const Juego *g, int destino);
+
+/* ---------------- Dialogos con H.E.R.O. ---------------- */
+
+static const char *CHARLA_SOLDADO[] = {
+    "«Hay tres puntos de evacuación. El helicóptero sale de la terraza de la Universidad, al norte. "
+    "El tren sale de la estación del oeste, pasando el hospital. Y hay un barco en el puerto, al sur.»",
+    "«El helicóptero no va a esperar para siempre. Cuando dejes de escucharlo, ya está.»",
+    "«El tren va lleno hasta el techo y es lento. Si fuera vos, iría al puerto.»",
+    "«Por el subte se cruza la ciudad, pero ahí abajo hay gente armada. No son de los nuestros.»",
+    "«No te acerques a los que caminan raro. Aunque los conozcas.»",
+    "«¿El aeropuerto? Mucha gente fue para allá. Desde anoche no sabemos nada de ellos.»",
+};
+static const char *CHARLA_CIENTIFICO[] = {
+    "«Para pasar necesitás un Pase de Prioridad. Sin pase no puedo dejarte seguir, son órdenes.»",
+    "«Los pases se entregaban en el Estadio, antes de que lo evacuáramos. Si quedó alguno, está ahí. "
+    "Pero ese lugar ya no es seguro.»",
+    "«El escáner mide la fiebre. Un poco es normal con el miedo, pero si pasa cierto punto, te vas "
+    "a cuarentena. No hay excepciones.»",
+    "«Si te hirieron, cuidá esa herida. Hay curas experimentales dando vueltas por la ciudad: "
+    "si encontrás una, usala.»",
+};
+#define N_CHARLA_SOLDADO    (int)(sizeof CHARLA_SOLDADO / sizeof CHARLA_SOLDADO[0])
+#define N_CHARLA_CIENTIFICO (int)(sizeof CHARLA_CIENTIFICO / sizeof CHARLA_CIENTIFICO[0])
+
+static int hay_soldado(const Juego *g)
+{
+    int b = g->j.bloque_actual;
+    return mapa[b].especial == ESP_CHECKPOINT || b == B_UNIVERSIDAD || g->patrulla;
+}
+static int hay_cientifico(const Juego *g)
+{
+    return mapa[g->j.bloque_actual].especial == ESP_CHECKPOINT;
+}
+
 static void hablar_checkpoint(Juego *g)
 {
-    log_msg(g, "Un soldado con traje protector te apunta con un termómetro y un fusil al mismo tiempo.\n");
-    log_msg(g, "«Quieto. Control.»\n");
+    log_msg(g, "Un científico con traje sellado te detiene mientras un soldado te apunta. "
+               "Te pasa un escáner por la frente.\n");
+    log_msg(g, "«Quieto. Control de infección.»\n");
     log_num(g, "  [infección: %d%%, límite: %d%%]\n", g->j.infeccion, LIMITE_CUARENTENA);
     if (g->j.infeccion > LIMITE_CUARENTENA) {
         terminar(g, F_CUARENTENA);
         return;
     }
     if (g->j.infeccion > 0)
-        log_msg(g, "Mira el termómetro un segundo de más antes de bajarlo.\n");
-    if (contar_item(&g->j, IT_PASE) > 0)
-        log_msg(g, "Revisa tu pase y baja el fusil. «Adelante.»\n");
+        log_msg(g, "Mira el escáner un segundo de más. «...Estás dentro del límite.»\n");
     else
-        log_msg(g, "«Sin pase no pasás. Volvé por donde viniste.»\n");
+        log_msg(g, "«Limpio.»\n");
+    if (contar_item(&g->j, IT_PASE) > 0)
+        log_msg(g, "Revisa tu pase y le hace una seña al soldado. «Adelante.»\n");
+    else
+        log_msg(g, "«Sin Pase de Prioridad no podés seguir.»\n");
 }
 
 static void entrar_bloque(Juego *g, int destino)
@@ -412,7 +449,17 @@ static void entrar_bloque(Juego *g, int destino)
     /* Tirada de peligro: si el d20 supera el valor del bloque, no pasa nada */
     d20 = tirar_d20();
     log_num(g, "  [peligro: d20 = %d, necesitabas más de %d]\n", d20, PELIGRO_COLOR[b->color]);
-    if (d20 > PELIGRO_COLOR[b->color]) return;
+    if (d20 > PELIGRO_COLOR[b->color]) {
+        /* evento raro: una patrulla de H.E.R.O. te regala un botiquin */
+        if (!b->subterraneo && !g->patrulla_usada && azar(1, 100) <= CHANCE_PATRULLA) {
+            g->patrulla = g->patrulla_usada = 1;
+            log_msg(g, "Una patrulla de H.E.R.O. cruza la calle a paso rápido. Uno de los soldados "
+                       "se frena, te mira un segundo y te tira algo antes de seguir.\n");
+            recibir_loot(g, IT_BOTIQUIN, 1);
+            log_msg(g, "«Suerte.»\n");
+        }
+        return;
+    }
     iniciar_combate(g, destino);
 }
 
@@ -466,6 +513,7 @@ void juego_elegir(Juego *g, int indice)
     if (g->pant.op[indice].deshabilitada) return;
     v = g->pant.op[indice].valor;
     g->msg[0] = '\0';
+    if (g->estado != E_BLOQUE || (v != A_HABLAR_SOLDADO)) g->patrulla = 0;
 
     switch (g->estado) {
     case E_NOMBRE:
@@ -481,6 +529,10 @@ void juego_elegir(Juego *g, int indice)
         elegir_clase(g, v);
         break;
 
+    case E_RADIO:
+        g->estado = E_BLOQUE;
+        break;
+
     case E_BLOQUE:
         switch (v) {
         case A_LOOT:   lootear(g); break;
@@ -489,6 +541,14 @@ void juego_elegir(Juego *g, int indice)
         case A_USAR:   g->volver = E_BLOQUE; g->estado = E_USAR; break;
         case A_ESTADO: g->estado = E_ESTADO; break;
         case A_DEBUG:  g->volver = E_BLOQUE; g->estado = E_DEBUG; break;
+        case A_HABLAR_SOLDADO:
+            log_msg(g, "El soldado: %s\n", CHARLA_SOLDADO[g->charla_soldado]);
+            g->charla_soldado = (g->charla_soldado + 1) % N_CHARLA_SOLDADO;
+            break;
+        case A_HABLAR_CIENTIFICO:
+            log_msg(g, "El científico: %s\n", CHARLA_CIENTIFICO[g->charla_cientifico]);
+            g->charla_cientifico = (g->charla_cientifico + 1) % N_CHARLA_CIENTIFICO;
+            break;
         }
         break;
 
@@ -553,18 +613,35 @@ void juego_elegir(Juego *g, int indice)
 
 /* =========================== PANTALLAS =========================== */
 
-/* Pistas de que el tiempo se acaba, sin decir nada del helicoptero */
-static void pista_del_tiempo(Juego *g, Pantalla *p)
+/* Como esta la ciudad: indica (sin numeros) cuanto queda para el helicoptero */
+static void estado_ciudad(Juego *g, Pantalla *p)
+{
+    int t = g->j.turno;
+    if (t <= LIMITE_HELICOPTERO / 4)
+        agregar_texto(p, "\n\nSe escuchan gritos y manifestaciones. Altavoces lejanos repiten un mensaje de evacuación.");
+    else if (t <= LIMITE_HELICOPTERO * 2 / 3)
+        agregar_texto(p, "\n\nSe escuchan disparos, gritos, choques y explosiones. Hay helicópteros saliendo de la ciudad.");
+    else if (t <= LIMITE_HELICOPTERO)
+        agregar_texto(p, "\n\nPocos disparos se escuchan a lo lejos. Ya hay menos helicópteros en el cielo.");
+    else
+        agregar_texto(p, "\n\nYa no hay helicópteros. Rara vez podés escuchar algo a lo lejos.");
+}
+
+/* Lista de a donde se puede ir desde aca, con como se ve cada lugar */
+static void describir_salidas(Juego *g, Pantalla *p)
 {
     const Bloque *b = &mapa[g->j.bloque_actual];
-    int t = g->j.turno;
-    if (b->subterraneo) return;
-    if (t > LIMITE_HELICOPTERO)
-        agregar_texto(p, "\n\nHace rato que no se escucha nada en el cielo.");
-    else if (t >= LIMITE_HELICOPTERO - 3)
-        agregar_texto(p, "\n\nEl sonido de unas aspas, en algún lugar. Cada vez más débil.");
-    else if (t >= LIMITE_HELICOPTERO - 8 && t % 2 == 0)
-        agregar_texto(p, "\n\nPor un momento, un zumbido de aspas pasa sobre los techos.");
+    const Paso *paso;
+    int i;
+    agregar_texto(p, "\n\nDesde acá:");
+    for (i = 0; i < b->n_con; i++) {
+        int d = b->conexiones[i];
+        agregar_texto(p, "\n· %s: %s", mapa[d].nombre, VISTO[d]);
+        if (paso_bloqueado(g, d)) agregar_texto(p, " (sin pase no te dejan pasar)");
+        else if ((paso = buscar_paso(g->j.bloque_actual, d)) && !paso->abierto && paso->intentado)
+            agregar_texto(p, " (%s)", paso->obstaculo);
+        agregar_texto(p, ".");
+    }
 }
 
 static void pantalla_bloque(Juego *g, Pantalla *p)
@@ -578,11 +655,14 @@ static void pantalla_bloque(Juego *g, Pantalla *p)
     if (b->especial == ESP_CHECKPOINT && b->protegido >= 0)
         agregar_texto(p, contar_item(&g->j, IT_PASE) ? " Tu pase te deja seguir."
                                                       : " Sin pase no te dejan seguir.");
-    pista_del_tiempo(g, p);
+    estado_ciudad(g, p);
+    describir_salidas(g, p);
 
     if (b->looteado) agregar_opcion(p, A_LOOT, 1, "Investigar el área");
     else             agregar_opcion(p, A_LOOT, 0, "Investigar el área");
     agregar_opcion(p, A_MOVER, 0, "Moverse");
+    if (hay_cientifico(g)) agregar_opcion(p, A_HABLAR_CIENTIFICO, 0, "Hablar con el científico");
+    if (hay_soldado(g))    agregar_opcion(p, A_HABLAR_SOLDADO, 0, "Hablar con el soldado");
     agregar_opcion(p, A_INV, 0, "Inventario");
     agregar_opcion(p, A_USAR, 0, "Usar ítem");
     agregar_opcion(p, A_ESTADO, 0, "Ver estado");
@@ -702,9 +782,8 @@ static void pantalla_combate(Juego *g, Pantalla *p)
     if (e->tipo == EN_VANDALO)
         agregar_texto(p, ITEMS[e->arma].tipo == T_FUEGO ? " Tiene un arma de fuego." : " Tiene algo filoso en la mano.");
     if (e->evadiendo) agregar_texto(p, " Está agazapado, atento a lo que hagas.");
-    if (quedan == 1)      agregar_texto(p, "\nDetrás hay alguien más.");
-    else if (quedan <= 3 && quedan > 0) agregar_texto(p, "\nDetrás hay más.");
-    else if (quedan > 3)  agregar_texto(p, "\nDetrás, demasiadas formas para contarlas.");
+    if (quedan == 1)     agregar_texto(p, "\nDetrás espera 1 más.");
+    else if (quedan > 1) agregar_texto(p, "\nDetrás esperan %d más.", quedan);
     if (ver_numeros)
         agregar_texto(p, "\n[%s %d/%d · arm %d · quedan %d · vos %d/%d]", e->nombre, maximo(0, e->vida),
                       e->vida_max, e->armadura, quedan, j->vida, j->vida_max);
@@ -730,7 +809,7 @@ static void pantalla_final(Juego *g, Pantalla *p)
     snprintf(p->imagen, sizeof p->imagen, "finales/%s", final_slug(g->final));
     p->imagen_alt[0] = '\0';
     p->imagen_enemigo[0] = '\0';
-    p->imagen_npc[0] = '\0';
+    p->imagen_npc[0] = p->imagen_npc2[0] = '\0';
     snprintf(p->titulo, sizeof p->titulo, "%s", final_titulo(g->final));
     agregar_texto(p, "%s", final_texto(g->final));
     agregar_opcion(p, 1, 0, "Jugar de nuevo");
@@ -753,22 +832,21 @@ void juego_construir_pantalla(Juego *g)
         for (i = g->c.actual + 1; i < g->c.n && p->n_cola < MAX_COLA_VISIBLE; i++)
             snprintf(p->imagen_cola[p->n_cola++], sizeof p->imagen_cola[0], "enemigos/%s", g->c.cola[i].slug);
     }
-    /* soldado de H.E.R.O. parado en los checkpoints con guardia y en la Universidad */
-    if (!g->en_combate && (mapa[g->j.bloque_actual].especial == ESP_CHECKPOINT ||
-                           g->j.bloque_actual == B_UNIVERSIDAD))
+    /* H.E.R.O.: soldado en checkpoints, Universidad y patrulla; cientifico en checkpoints */
+    if (!g->en_combate && hay_soldado(g))
         snprintf(p->imagen_npc, sizeof p->imagen_npc, "npc/soldado_hero");
+    if (!g->en_combate && hay_cientifico(g))
+        snprintf(p->imagen_npc2, sizeof p->imagen_npc2, "npc/cientifico_hero");
     if (g->msg[0] && g->estado != E_FINAL) agregar_texto(p, "%s\n", g->msg);
 
     switch (g->estado) {
     case E_NOMBRE:
         snprintf(p->imagen, sizeof p->imagen, "portada");
         p->imagen_alt[0] = '\0';
-        p->imagen_npc[0] = '\0';
+        p->imagen_npc[0] = p->imagen_npc2[0] = '\0';
         snprintf(p->titulo, sizeof p->titulo, "Escape Corpus Christi");
         agregar_texto(p, "Algo pasó en la ciudad durante la noche. Desde el refugio se escuchan pasos "
                          "que no terminan de sonar humanos.\n\n"
-                         "La radio, entre estática, repite un mismo mensaje: «...H.E.R.O. ... evacuación "
-                         "en curso ... diríjanse a...» El resto se pierde.\n\n"
                          "¿Cómo te llamás?");
         p->pide_nombre = 1;
         agregar_opcion(p, 1, 0, "Comenzar");
@@ -777,12 +855,22 @@ void juego_construir_pantalla(Juego *g)
     case E_CLASE:
         snprintf(p->imagen, sizeof p->imagen, "portada");
         p->imagen_alt[0] = '\0';
-        p->imagen_npc[0] = '\0';
+        p->imagen_npc[0] = p->imagen_npc2[0] = '\0';
         snprintf(p->titulo, sizeof p->titulo, "¿A qué te dedicabas, %s?", g->j.nombre);
         for (i = 0; i < NUM_CLASES; i++) {
             agregar_texto(p, "%s. %s\n", CLASES[i].nombre, CLASES[i].descripcion);
             agregar_opcion(p, i, 0, "%s", CLASES[i].nombre);
         }
+        break;
+    case E_RADIO:
+        snprintf(p->titulo, sizeof p->titulo, "La radio");
+        agregar_texto(p, "Entre la estática, la radio repite un comunicado:\n\n"
+                         "«Comunicado de la Fuerza H.E.R.O. a la población civil. Se ha iniciado la "
+                         "evacuación de la ciudad. El punto de extracción aérea se encuentra en la "
+                         "Universidad, en el sector norte. Para acceder, presente su Pase de Prioridad "
+                         "en el puesto de control. Los vuelos tienen capacidad limitada. Evite el "
+                         "contacto con personas que presenten síntomas. Este mensaje se repetirá.»");
+        agregar_opcion(p, 1, 0, "Salir del refugio");
         break;
     case E_BLOQUE:      pantalla_bloque(g, p); break;
     case E_MOVER:       pantalla_mover(g, p); break;

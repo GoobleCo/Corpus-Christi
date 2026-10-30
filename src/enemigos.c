@@ -101,10 +101,10 @@ void aplicar_danio(Juego *g, int d)
     int pct = j->vida_max > 0 ? d * 100 / j->vida_max : 0;
     j->vida = maximo(0, j->vida - d);
     if (d <= 0)        log_msg(g, "  No te alcanza.\n");
-    else if (pct < 8)  log_msg(g, "  Apenas un rasguño.\n");
-    else if (pct < 16) log_msg(g, "  Duele.\n");
-    else if (pct < 28) log_msg(g, "  El golpe te deja sin aire.\n");
-    else               log_msg(g, "  Sentís que algo se rompe.\n");
+    else if (pct < 8)  log_msg(g, "  Te lastima: apenas un rasguño.\n");
+    else if (pct < 16) log_msg(g, "  Te lastima. Duele.\n");
+    else if (pct < 28) log_msg(g, "  Te lastima mucho. El golpe te deja sin aire.\n");
+    else               log_msg(g, "  Te lastima gravemente. Sentís que algo se rompe.\n");
     log_num(g, "  [-%d vida → %d/%d]\n", d, j->vida, j->vida_max);
     if (j->vida > 0 && j->vida * 100 < j->vida_max * 30)
         log_msg(g, "  Te cuesta mantenerte en pie.\n");
@@ -115,13 +115,13 @@ void aplicar_infeccion(Juego *g, int ixi)
     int prot = proteccion_infeccion(&g->j);
     int gana = maximo(0, ixi - prot);
     if (gana == 0) {
-        log_msg(g, "  La herida no llega a la piel.\n");
+        log_msg(g, "  Tu protección evita que la herida se infecte.\n");
         return;
     }
     g->j.infeccion = minimo(100, g->j.infeccion + gana);
-    if (g->j.infeccion >= 60)      log_msg(g, "  La herida arde. Tenés la frente empapada.\n");
-    else if (g->j.infeccion >= 30) log_msg(g, "  La herida arde más de lo que debería.\n");
-    else                           log_msg(g, "  La herida arde.\n");
+    if (g->j.infeccion >= 60)      log_msg(g, "  La herida se infecta. Tenés fiebre alta y la frente empapada.\n");
+    else if (g->j.infeccion >= 30) log_msg(g, "  La herida se infecta. Empezás a tener fiebre.\n");
+    else                           log_msg(g, "  La herida arde. Puede que se haya infectado.\n");
     log_num(g, "  [+%d infección (bloqueaste %d) → %d%%]\n", gana, ixi - gana, g->j.infeccion);
 }
 

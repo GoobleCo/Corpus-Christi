@@ -35,7 +35,7 @@
 #define TXT_X        40
 #define TXT_Y        448
 #define TXT_W        700
-#define TXT_ALTO     252
+#define TXT_ALTO     264
 #define OPC_X        800
 #define OPC_Y        400
 #define OPC_W        440
@@ -43,8 +43,8 @@
 #define OPC_SEP      2
 #define MAX_VISIBLES 8
 #define TAM_TITULO   26
-#define TAM_TEXTO    20
-#define LINEA        26
+#define TAM_TEXTO    18
+#define LINEA        23
 #define TAM_OPCION   20
 
 /* Colores: solo blanco y negro */
@@ -233,6 +233,88 @@ static void activar_boton(int i)
     else if (hay_mas && i == n) pagina = (pagina + 1) % total_paginas();
 }
 
+/* ======================= MUSICA =======================
+ * assets/musica/paz.ogg       zonas de H.E.R.O. (celestes), el inicio y la portada
+ * assets/musica/incierto.ogg  bloques con peligro
+ * assets/musica/combate.ogg   durante un combate (si falta, sigue la de incierto)
+ * assets/musica/final.ogg     pantalla de final
+ * Si falta un archivo, simplemente no suena. Al cambiar de tema hay un fundido. */
+
+enum { M_PAZ, M_INCIERTO, M_COMBATE, M_FINAL, NUM_MUSICAS };
+static const char *ARCHIVO_MUSICA[NUM_MUSICAS] = {
+    "assets/musica/paz.ogg", "assets/musica/incierto.ogg",
+    "assets/musica/combate.ogg", "assets/musica/final.ogg",
+};
+#define VOLUMEN_MUSICA 0.6f
+#define FUNDIDO        1.5f    /* segundos que tarda en entrar o salir un tema */
+
+static Music musica[NUM_MUSICAS];
+static int musica_ok[NUM_MUSICAS];
+static float volumen[NUM_MUSICAS];
+static int hay_musica = 0, silencio = 0;
+static const Rectangle BOTON_MUSICA = { ANCHO - 64, 10, 54, 46 };
+
+static void cargar_musica(void)
+{
+    int i;
+    InitAudioDevice();
+    if (!IsAudioDeviceReady()) return;
+    for (i = 0; i < NUM_MUSICAS; i++) {
+        musica_ok[i] = 0;
+        if (!FileExists(ARCHIVO_MUSICA[i])) continue;
+        musica[i] = LoadMusicStream(ARCHIVO_MUSICA[i]);
+        musica_ok[i] = IsMusicValid(musica[i]);
+        if (musica_ok[i]) { SetMusicVolume(musica[i], 0); hay_musica = 1; }
+    }
+}
+
+/* Que tema corresponde a lo que esta pasando en el juego */
+static int musica_deseada(void)
+{
+    int b = juego.j.bloque_actual, m;
+    if (juego.estado == E_FINAL) m = M_FINAL;
+    else if (juego.en_combate) m = M_COMBATE;
+    else if (juego.estado == E_NOMBRE || juego.estado == E_CLASE) m = M_PAZ;
+    else if (mapa[b].color == C_CELESTE || b == B_INICIO) m = M_PAZ;
+    else m = M_INCIERTO;
+    if (m == M_COMBATE && !musica_ok[M_COMBATE]) m = M_INCIERTO;
+    return musica_ok[m] ? m : -1;
+}
+
+static void actualizar_musica(void)
+{
+    int i, deseada;
+    float paso = GetFrameTime() / FUNDIDO;
+    if (!hay_musica) return;
+    deseada = musica_deseada();
+    for (i = 0; i < NUM_MUSICAS; i++) {
+        if (!musica_ok[i]) continue;
+        if (i == deseada) {
+            /* paz e incierto se pausan y siguen donde estaban;
+             * combate y final se detienen, asi que vuelven a empezar desde el principio */
+            if (!IsMusicStreamPlaying(musica[i])) PlayMusicStream(musica[i]);
+            volumen[i] = fminf(1, volumen[i] + paso);
+        } else {
+            volumen[i] = fmaxf(0, volumen[i] - paso);
+            if (volumen[i] <= 0 && IsMusicStreamPlaying(musica[i])) {
+                if (i == M_COMBATE || i == M_FINAL) StopMusicStream(musica[i]);
+                else PauseMusicStream(musica[i]);
+            }
+        }
+        if (IsMusicStreamPlaying(musica[i])) {
+            SetMusicVolume(musica[i], silencio ? 0 : volumen[i] * VOLUMEN_MUSICA);
+            UpdateMusicStream(musica[i]);
+        }
+    }
+}
+
+static void descargar_musica(void)
+{
+    int i;
+    for (i = 0; i < NUM_MUSICAS; i++) if (musica_ok[i]) UnloadMusicStream(musica[i]);
+    if (IsAudioDeviceReady()) CloseAudioDevice();
+}
+
 /* ======================= ENTRADA ======================= */
 
 static Vector2 escala_y_offset(float *escala)
@@ -275,6 +357,7 @@ static float scroll_maximo(void)
 static void tocar(Vector2 p)
 {
     int i, indices[MAX_VISIBLES], hay_mas, n = opciones_visibles(indices, &hay_mas);
+    if (hay_musica && CheckCollisionPointRec(p, BOTON_MUSICA)) { silencio = !silencio; return; }
     for (i = 0; i < n + hay_mas; i++)
         if (CheckCollisionPointRec(p, rect_boton(i))) { activar_boton(i); return; }
 }
@@ -324,6 +407,7 @@ static void actualizar(void)
     if (juego.pant.pide_nombre) {
         escribir_nombre();
     } else {
+        if (IsKeyPressed(KEY_M)) silencio = !silencio;
         for (i = 0; i < 9; i++)
             if (IsKeyPressed(KEY_ONE + i) || IsKeyPressed(KEY_KP_1 + i)) { activar_boton(i); break; }
     }
@@ -341,15 +425,17 @@ static void actualizar(void)
     if (!abajo && estaba_abajo && !arrastrando) tocar(ultimo_toque);
     estaba_abajo = abajo;
 
-    /* pantalla nueva: volver a la primera pagina y mostrar el final del texto */
+    /* pantalla nueva: volver a la primera pagina y al principio del texto */
     if (juego.pant.version != version_vista) {
         version_vista = juego.pant.version;
         pagina = 0;
         envolver(juego.pant.texto, TXT_W);
-        scroll = scroll_maximo();
+        scroll = 0;
     }
     if (scroll > scroll_maximo()) scroll = scroll_maximo();
     if (scroll < 0) scroll = 0;
+
+    actualizar_musica();
 
     if (juego.quiere_salir) {
 #if defined(PLATFORM_WEB)
@@ -372,7 +458,11 @@ static void dibujar_imagen(void)
     if (fondo && fondo->ok) dibujar_cubriendo(fondo->tex, zona);
     else texto(TextFormat("(falta assets/%s.png)", p->imagen), TXT_X, IMG_ALTO / 2.0f, 18, C_APAGADO);
 
-    if (!enem && p->imagen_npc[0]) {
+    if (!enem && p->imagen_npc2[0]) {   /* cientifico, a la izquierda */
+        Imagen *npc = imagen(p->imagen_npc2);
+        if (npc && npc->ok) dibujar_enemigo(npc->tex, ANCHO * 0.30f, 0.80f, WHITE);
+    }
+    if (!enem && p->imagen_npc[0]) {    /* soldado, a la derecha */
         Imagen *npc = imagen(p->imagen_npc);
         if (npc && npc->ok) dibujar_enemigo(npc->tex, ANCHO * 0.72f, 0.95f, WHITE);
     }
@@ -396,6 +486,13 @@ static void dibujar_imagen(void)
 
     /* la imagen se funde con el negro de abajo */
     DrawRectangleGradientV(0, IMG_ALTO - 80, ANCHO, 80, Fade(BLACK, 0), C_NEGRO);
+
+    /* boton de musica (arriba a la derecha): se toca o se aprieta M */
+    if (hay_musica) {
+        Rectangle r = BOTON_MUSICA;
+        DrawTextEx(fuente, "♪", (Vector2){ r.x + 16, r.y + 4 }, 34, 0, silencio ? C_APAGADO : C_BLANCO);
+        if (silencio) DrawLineEx((Vector2){ r.x + 10, r.y + r.height - 8 }, (Vector2){ r.x + r.width - 10, r.y + 8 }, 3, C_BLANCO);
+    }
 }
 
 static void dibujar_texto(void)
@@ -414,6 +511,8 @@ static void dibujar_texto(void)
         float total = (float)n_lineas, h = TXT_ALTO * visibles / total;
         float y = TXT_Y + (TXT_ALTO - h) * (scroll / fmaxf(1, scroll_maximo()));
         DrawRectangle(TXT_X + TXT_W + 14, (int)y, 2, (int)h, C_APAGADO);
+        if (scroll < scroll_maximo() - 0.5f)
+            texto("▼ más abajo", TXT_X + TXT_W - 100, ALTO - 26, 16, C_BLANCO);
     }
 
     if (juego.pant.pide_nombre) {
@@ -445,6 +544,28 @@ static void dibujar_opciones(void)
     }
 }
 
+/* Bordes rojos que aparecen al perder vida y laten cuando queda poca */
+static void dibujar_heridas(void)
+{
+    Jugador *j = &juego.j;
+    float frac, fuerza, ancho;
+    unsigned char alfa;
+    Color rojo, nada = { 150, 0, 0, 0 };
+    if (juego.estado == E_NOMBRE || juego.estado == E_CLASE || juego.estado == E_RADIO ||
+        juego.estado == E_FINAL || j->vida_max <= 0) return;
+    frac = (float)j->vida / j->vida_max;
+    if (frac >= 0.7f) return;
+    fuerza = (0.7f - frac) / 0.7f;                               /* 0 = sano, 1 = casi muerto */
+    if (frac < 0.3f) fuerza *= 0.8f + 0.2f * sinf((float)GetTime() * 5);   /* late */
+    ancho = 60 + 220 * fuerza;
+    alfa = (unsigned char)(200 * fuerza);
+    rojo = (Color){ 150, 0, 0, alfa };
+    DrawRectangleGradientH(0, 0, (int)ancho, ALTO, rojo, nada);
+    DrawRectangleGradientH(ANCHO - (int)ancho, 0, (int)ancho, ALTO, nada, rojo);
+    DrawRectangleGradientV(0, 0, ANCHO, (int)(ancho * 0.6f), rojo, nada);
+    DrawRectangleGradientV(0, ALTO - (int)(ancho * 0.6f), ANCHO, (int)(ancho * 0.6f), nada, rojo);
+}
+
 static void dibujar(void)
 {
     float s;
@@ -458,6 +579,7 @@ static void dibujar(void)
     dibujar_imagen();
     dibujar_texto();
     dibujar_opciones();
+    dibujar_heridas();
     EndBlendMode();
     EndTextureMode();
 
@@ -479,7 +601,7 @@ static void cuadro(void)
 static Font cargar_fuente(const char *ruta)
 {
     /* ASCII + acentos, eñe y simbolos que usa el juego */
-    static const char *extra = "áéíóúÁÉÍÓÚñÑüÜ¿¡°·—–…▶◀✔∞“”«»›";
+    static const char *extra = "áéíóúÁÉÍÓÚñÑüÜ¿¡°·—–…▶◀✔∞“”«»›♪▼▲";
     int n_extra = 0, i, total;
     int *cp_extra = LoadCodepoints(extra, &n_extra);
     int *cps = (int *)malloc(sizeof(int) * (95 + n_extra));
@@ -516,6 +638,7 @@ int main(void)
     lienzo = LoadRenderTexture(ANCHO, ALTO);
     SetTextureFilter(lienzo.texture, TEXTURE_FILTER_BILINEAR);
 
+    cargar_musica();
     juego_nuevo(&juego);
 
 #if defined(PLATFORM_WEB)
@@ -525,6 +648,7 @@ int main(void)
     while (!WindowShouldClose() && !cerrar) cuadro();
 #endif
 
+    descargar_musica();
     UnloadRenderTexture(lienzo);
     CloseWindow();
     return 0;

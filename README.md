@@ -53,7 +53,7 @@ Las imágenes que vienen son **de prueba**. Reemplazá cualquier PNG por el tuyo
 | Carpeta | Tamaño recomendado | Notas |
 |---|---|---|
 | `assets/biomas/` | 1280 × 400 | Imagen genérica por tipo de lugar: `calle`, `callejon`, `checkpoint`, `subte`, `tunel`, `alcantarilla`, `puerto`, `galpon` |
-| `assets/npc/` | ~600 × 700 | `soldado_hero.png`: aparece en los checkpoints con guardia y en la Universidad (no ataca) |
+| `assets/npc/` | ~600 × 700 | `soldado_hero.png` (checkpoints, Universidad y la patrulla) y `cientifico_hero.png` (checkpoints). No atacan; se puede hablar con ellos |
 | `assets/lugares/` | 1280 × 400 | Imagen propia de un bloque; si no existe, se usa la de su bioma |
 | `assets/enemigos/` | ~600 × 700 | **Con fondo transparente**; se dibuja encima del bloque |
 | `assets/finales/` | 1280 × 400 | Una por final |
@@ -63,6 +63,10 @@ Enemigos (cada uno elige al azar entre sus variantes; los que esperan su turno s
 `infectado_comun.png` / `infectado_comun_2.png`, `policia_infectado.png` / `policia_infectado_2.png`, `stalker.png`,
 y los Vándalos según su arma: `vandalo.png` (pistola), `vandalo_escopeta.png` (escopeta y armas blancas), `vandalo_m16.png` (M16).
 Finales: `helicoptero.png`, `tren.png`, `bote.png`, `cuarentena.png`, `infeccion_tardia.png`, `muerte.png`, `convertido.png`.
+
+**Música:** va en `assets/musica/` (`paz.ogg`, `incierto.ogg`, `combate.ogg`, `final.ogg`; ver el `LEEME.txt`).
+Cambia sola según dónde estás, con un fundido. Se silencia con la tecla **M** o tocando la ♪ arriba a la derecha.
+En la versión web empieza a sonar después del primer toque o tecla (los navegadores no dejan reproducir audio antes).
 
 Los biomas de cada bloque están en la tabla `BIOMA` de `src/mapa.c`. Para darle una imagen propia a una
 calle, alcanza con poner `assets/lugares/<nombre>.png`.
@@ -147,6 +151,10 @@ Si borrás una imagen, el juego igual anda y muestra qué archivo falta. Para vo
   | Puerto Destruido ↔ Puerto | grúa caída | 15 |
 
   Fuerza por clase: Bombero 20, Policía 15, Paramédico 5, Vago 0 (el Suero de H.E.R.O. suma 15). Se cambia en `src/mapa.c`.
+- **H.E.R.O.:** en los checkpoints hay un científico (revisa infección y pase) y un soldado. Se puede hablar con los dos:
+  cuentan dónde están el tren y el barco, y dónde se repartían los pases. Muy de vez en cuando (6 %, una vez por partida)
+  una patrulla te regala un botiquín.
+- **Heridas:** no hay barra de vida; al perder vida aparecen bordes rojos que laten cuando queda poca.
 - **Callejones sin salida:** Bloqueo, Estadio, Checkpoint Este (cerrado) y Aeropuerto. En el **Aeropuerto no se puede escapar** de un combate.
 - **Ítems garantizados:** Navaja en el Inicio, Botiquín en el Hospital y Pase de Prioridad en el Estadio.
 - **Peligro oculto:** sin el Mapa Satelital no ves el color/peligro de los bloques a los que vas.

@@ -204,17 +204,35 @@ static const int PESO_RAREZA[5][4] = {
     {25, 30, 30, 15},   /* Violeta */
 };
 
+/* Dentro de cada rareza, que tan seguido aparece cada item (2 = normal).
+ * Las armas aparecen menos y las curaciones chicas mas. */
+static int peso_item(int id)
+{
+    switch (id) {
+    case IT_VENDAJE:  return 4;
+    case IT_PILDORAS: return 3;
+    default:
+        if (ITEMS[id].tipo == T_MELEE || ITEMS[id].tipo == T_FUEGO) return 1;
+        return 2;
+    }
+}
+
 int item_aleatorio(int color)
 {
-    int r = azar(1, 100), rareza = 0, acum = 0, i, n = 0;
-    int pool[NUM_ITEMS];
+    int r = azar(1, 100), rareza = 0, acum = 0, i, total = 0;
     for (i = 0; i < 4; i++) {
         acum += PESO_RAREZA[color][i];
         if (r <= acum) { rareza = i; break; }
     }
     for (i = 0; i < NUM_ITEMS; i++)
-        if ((int)ITEMS[i].rareza == rareza) pool[n++] = i;
-    return pool[azar(0, n - 1)];
+        if ((int)ITEMS[i].rareza == rareza) total += peso_item(i);
+    r = azar(1, total);
+    for (i = 0; i < NUM_ITEMS; i++) {
+        if ((int)ITEMS[i].rareza != rareza) continue;
+        r -= peso_item(i);
+        if (r <= 0) return i;
+    }
+    return IT_VENDAJE;
 }
 
 int cantidad_loot(int id)

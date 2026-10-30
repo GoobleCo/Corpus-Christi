@@ -36,7 +36,8 @@ int main(int argc, char **argv)
     #define CAP(n) snprintf(ruta, sizeof ruta, "%s/%s.png", dir, n); capturar(ruta)
     CAP("01_nombre");
     elegir_texto("Comenzar");          CAP("02_clase");
-    elegir_texto("Bombero");           CAP("03_inicio");
+    elegir_texto("Bombero");           CAP("02b_radio");
+    elegir_texto("Salir del refugio"); CAP("03_inicio");
     elegir_texto("Investigar");        CAP("04_loot");
     elegir_texto("Moverse");           CAP("05_mover");
     d20_fijo = 1;                       /* forzar combate */
@@ -70,6 +71,17 @@ int main(int argc, char **argv)
     }
     juego.en_combate = 0; juego.estado = E_NOMBRE; juego_construir_pantalla(&juego);
     CAP("00_portada");
+    /* NUEVAS: checkpoint con los dos NPC, charla, heridas, patrulla */
+    juego.j.vida = juego.j.vida_max; juego.j.bloque_actual = B_CHECK_N; juego.estado = E_BLOQUE;
+    juego.msg[0] = 0; juego_construir_pantalla(&juego); CAP("20_checkpoint");
+    elegir_texto("Hablar con el soldado"); CAP("21_charla");
+    juego.j.bloque_actual = B_CN1; juego.estado = E_BLOQUE; juego.j.turno = 9;
+    juego.j.vida = juego.j.vida_max / 2; juego.msg[0] = 0; juego_construir_pantalla(&juego); CAP("22_herido");
+    juego.j.vida = juego.j.vida_max / 6; juego_construir_pantalla(&juego); CAP("23_muy_herido");
+    juego.j.vida = juego.j.vida_max; juego.patrulla = 1; juego.msg[0] = 0;
+    log_msg(&juego, "Una patrulla de H.E.R.O. cruza la calle a paso rápido. Uno de los soldados se frena, te mira un segundo y te tira algo antes de seguir.\n  · Botiquín\n«Suerte.»\n");
+    juego_construir_pantalla(&juego); CAP("24_patrulla");
+    juego.patrulla = 0;
     /* COLA: pelea con varios esperando detras */
     {
         static const TipoEnemigo t[] = {EN_COMUN, EN_POLICIA, EN_COMUN, EN_STALKER, EN_POLICIA};
