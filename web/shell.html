@@ -28,6 +28,7 @@
     <div id="cargando">
         <h1>Escape Corpus Christi</h1>
         <p id="estado">Cargando...</p>
+        <p style="opacity:.35;font-size:12px">versión __VERSION__</p>
         <p id="girar">Para jugar mejor, girá el celular.</p>
         <p><a href="EscapeZombi-Windows.zip">Descargar para Windows</a></p>
     </div>
@@ -39,10 +40,30 @@
                 document.getElementById('estado').textContent = t || 'Listo';
                 if (!t) document.getElementById('cargando').style.display = 'none';
             },
+            /* "?v=..." hace que el navegador baje la version nueva y no use una vieja guardada */
+            locateFile: function (ruta) { return ruta + '?v=__VERSION__'; },
             print: function (t) { console.log(t); },
             printErr: function (t) { console.warn(t); }
         };
         document.getElementById('canvas').addEventListener('pointerdown', function () { this.focus(); });
+
+        /* iPhone: que el sonido se escuche aunque el celular este en modo silencio */
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+
+        /* Los navegadores no dejan sonar nada hasta que el jugador toca o aprieta algo.
+         * raylib solo despierta el audio con un click o un toque; esto lo despierta
+         * tambien con el teclado, y lo vuelve a intentar si el navegador lo pauso. */
+        function despertarAudio() {
+            var ma = window.miniaudio, i, d;
+            if (!ma || !ma.devices) return;
+            for (i = 0; i < ma.devices.length; i++) {
+                d = ma.devices[i];
+                if (d && d.webaudio && d.webaudio.state !== 'running') d.webaudio.resume().catch(function () {});
+            }
+        }
+        ['pointerdown', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown'].forEach(function (ev) {
+            document.addEventListener(ev, despertarAudio, true);
+        });
     </script>
     {{{ SCRIPT }}}
 </body>

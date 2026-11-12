@@ -55,7 +55,11 @@ jobs:
           emcc -O2 -std=c99 -Wall src/*.c -o sitio/index.html \
             -Iraylib/src raylib/src/libraylib.a -DPLATFORM_WEB \
             -sUSE_GLFW=3 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1mb \
-            --preload-file assets --shell-file web/shell.html
+            --preload-file assets --shell-file web/shell.html \
+            -DVERSION_JUEGO="\"${GITHUB_SHA::7}\""
+          # numero de version en la pagina y en index.js (para que no quede una version vieja guardada)
+          sed -i "s/__VERSION__/${GITHUB_SHA::7}/g; s/src=\"index.js\"/src=\"index.js?v=${GITHUB_SHA::7}\"/" sitio/index.html
+          grep -o 'index.js[^"]*' sitio/index.html || true
 
       - name: Compilar version Windows
         run: |
@@ -90,3 +94,4 @@ jobs:
       - name: Publicar en GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+        
