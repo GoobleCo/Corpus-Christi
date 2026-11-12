@@ -26,6 +26,7 @@ int main(int argc, char **argv)
     const char *dir = argc > 1 ? argv[1] : ".";
     char ruta[256];
     srand(4);
+    sin_animaciones = 1;
     InitWindow(ANCHO, ALTO, "capturas");
     fuente = cargar_fuente("assets/fuente.ttf");
     fuente_negrita = cargar_fuente("assets/fuente_negrita.ttf");

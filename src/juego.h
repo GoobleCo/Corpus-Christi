@@ -223,6 +223,46 @@ typedef struct {
     int version;              /* cambia cada vez que se arma una pantalla nueva */
 } Pantalla;
 
+/* ============================ EFECTOS ============================
+ * Lo que acaba de pasar, para que la interfaz lo anime y lo haga sonar
+ * (flash, temblor, sonido). La logica los va agregando en orden con efecto()
+ * y main.c los reproduce uno detras del otro. Se borran en cada eleccion. */
+
+typedef enum {
+    FX_GOLPE,           /* le pegas (puños o arma blanca) */
+    FX_DISPARO,         /* disparas */
+    FX_FALLO,           /* lo esquiva */
+    FX_SIN_BALAS,       /* click */
+    FX_ARMA_ROTA,
+    FX_ENEMIGO_CAE,     /* imagen = el que cae */
+    FX_ENEMIGO_HUYE,    /* imagen = el que se va */
+    FX_APARECE,         /* empieza un combate */
+    FX_REFUERZO,        /* el ruido atrajo a otro */
+    FX_ATAQUE_ENEMIGO,  /* se te tira encima (antes del daño) */
+    FX_DISPARO_ENEMIGO,
+    FX_DANIO,           /* te lastiman; valor = % de la vida maxima */
+    FX_NO_TE_ALCANZA,
+    FX_INFECCION,
+    FX_CURA,
+    FX_LOOT,
+    FX_NADA,            /* buscaste y no habia nada */
+    FX_ESCAPE,
+    FX_ESCAPE_FALLA,
+    FX_PASOS,           /* cambiar de bloque */
+    FX_FIN_COMBATE,
+    FX_FINAL_BUENO,
+    FX_FINAL_MALO,
+    NUM_FX
+} TipoEfecto;
+
+typedef struct {
+    TipoEfecto tipo;
+    int valor;
+    char imagen[48];    /* algunos efectos dibujan una imagen (ej: el enemigo que cae) */
+} Efecto;
+
+#define MAX_EFECTOS 24
+
 /* ============================ JUEGO ============================ */
 
 typedef enum {
@@ -247,6 +287,8 @@ typedef struct {
     int charla_soldado;       /* proxima linea de dialogo de cada NPC */
     int charla_cientifico;
     char msg[MSG_MAX];        /* lo que acaba de pasar */
+    Efecto fx[MAX_EFECTOS];   /* lo mismo, para animar y hacer sonar (ver EFECTOS) */
+    int n_fx;
     Pantalla pant;
 } Juego;
 
@@ -261,6 +303,7 @@ int  maximo(int a, int b);
 void log_msg(Juego *g, const char *fmt, ...);
 void agregar_opcion(Pantalla *p, int valor, int deshabilitada, const char *fmt, ...);
 void agregar_texto(Pantalla *p, const char *fmt, ...);
+void efecto(Juego *g, TipoEfecto t, int valor, const char *imagen);
 
 /* ---------- logica.c (lo que usa la interfaz) ---------- */
 void juego_nuevo(Juego *g);

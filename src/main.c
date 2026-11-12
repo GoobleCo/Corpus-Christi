@@ -13,6 +13,10 @@
  *
  * Las opciones se eligen con los numeros del teclado o tocando/clickeando.
  * Todo se dibuja en un lienzo de 1280x720 que despues se escala a la ventana.
+ *
+ * Animaciones y sonidos: la logica deja en juego.fx lo que acaba de pasar
+ * (ver EFECTOS en juego.h) y aca se reproduce en orden: flash, temblor de
+ * pantalla, el enemigo que se sacude, cae o aparece, y un sonido para cada cosa.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,13 +109,18 @@ static void dibujar_cubriendo(Texture2D t, Rectangle dst)
 
 /* Dibuja un enemigo apoyado en el borde de abajo de la imagen.
  * escala < 1 y tinte oscuro = esta mas atras, esperando. */
-static void dibujar_enemigo(Texture2D t, float centro_x, float escala, Color tinte)
+static void dibujar_enemigo_mov(Texture2D t, float centro_x, float escala, Color tinte, float dx, float dy)
 {
     float alto_max = (IMG_ALTO - 14) * escala, ancho_max = 560 * escala;
     float s = fminf(alto_max / t.height, ancho_max / t.width);
     float w = t.width * s, h = t.height * s;
-    Rectangle dst = { centro_x - w / 2, IMG_ALTO - h, w, h };
+    Rectangle dst = { centro_x - w / 2 + dx, IMG_ALTO - h + dy, w, h };
     DrawTexturePro(t, (Rectangle){ 0, 0, (float)t.width, (float)t.height }, dst, (Vector2){ 0, 0 }, 0, tinte);
+}
+
+static void dibujar_enemigo(Texture2D t, float centro_x, float escala, Color tinte)
+{
+    dibujar_enemigo_mov(t, centro_x, escala, tinte, 0, 0);
 }
 
 /* ======================= TEXTO ======================= */
@@ -315,6 +324,444 @@ static void descargar_musica(void)
     if (IsAudioDeviceReady()) CloseAudioDevice();
 }
 
+/* ======================= SONIDOS =======================
+ * Se generan con codigo al arrancar (no hace falta ningun archivo).
+ * Para usar uno propio, poner assets/sonidos/<nombre>.wav (o .ogg) con el
+ * nombre de la tabla NOMBRE_SONIDO: si existe, se usa ese en vez del generado. */
+
+enum {
+    S_GOLPE, S_DISPARO, S_DISPARO_LEJOS, S_WHOOSH, S_CLICK, S_ROTA, S_CAE,
+    S_APARECE, S_REFUERZO, S_EMBESTIDA, S_DANIO, S_INFECCION, S_CURA, S_LOOT,
+    S_NADA, S_ESCAPE, S_PASOS, S_FIN_COMBATE, S_FINAL_MALO, S_FINAL_BUENO,
+    NUM_SONIDOS
+};
+static const char *NOMBRE_SONIDO[NUM_SONIDOS] = {
+    "golpe", "disparo", "disparo_enemigo", "esquivar", "click", "arma_rota", "cae",
+    "aparece", "refuerzo", "embestida", "danio", "infeccion", "cura", "loot",
+    "nada", "escape", "pasos", "fin_combate", "final_malo", "final_bueno",
+};
+/* volumen de cada sonido generado (pico, de 0 a 1) */
+static const float VOLUMEN_SONIDO[NUM_SONIDOS] = {
+    0.80f, 0.95f, 0.60f, 0.45f, 0.50f, 0.60f, 0.75f,
+    0.85f, 0.45f, 0.50f, 0.90f, 0.40f, 0.35f, 0.40f,
+    0.30f, 0.55f, 0.35f, 0.25f, 0.80f, 0.45f,
+};
+#define VOLUMEN_SONIDOS 0.8f
+#define SR 22050                 /* frecuencia de muestreo de los sonidos generados */
+
+static Sound sonido[NUM_SONIDOS];
+static int sonido_ok[NUM_SONIDOS];
+static int hay_sonidos = 0;
+
+static unsigned int semilla_ruido = 12345;
+static float ruido(void)
+{
+    semilla_ruido = semilla_ruido * 1664525u + 1013904223u;
+    return (float)(semilla_ruido >> 8) / 8388608.0f - 1.0f;
+}
+static float seno(float fase) { return sinf(fase * 6.2831853f); }
+static float sierra(float fase) { return 2.0f * (fase - floorf(fase)) - 1.0f; }
+
+/* Golpe sordo: un tono grave que cae + un poco de ruido. Se usa para varios sonidos. */
+static float golpe_sordo(float t, float f0, float f1, float caida, float *fase)
+{
+    float f, e;
+    if (t < 0) return 0;
+    f = f1 + (f0 - f1) * expf(-t * 18);
+    *fase += f / SR;
+    e = expf(-t * caida);
+    return seno(*fase) * e;
+}
+
+static Sound generar_sonido(int cual)
+{
+    static float m[SR * 2];
+    float dur, lp = 0, lp2 = 0, fase = 0, fase2 = 0, fase3 = 0, fase4 = 0, pico = 0, ganancia;
+    int n, i;
+    Wave w;
+    short *datos;
+    Sound snd;
+    switch (cual) {
+    case S_DISPARO: case S_DISPARO_LEJOS: dur = 0.6f; break;
+    case S_APARECE:     dur = 1.1f; break;
+    case S_REFUERZO:    dur = 0.9f; break;
+    case S_INFECCION:   dur = 0.8f; break;
+    case S_CURA:        dur = 0.7f; break;
+    case S_ESCAPE:      dur = 0.8f; break;
+    case S_PASOS:       dur = 0.5f; break;
+    case S_FIN_COMBATE: dur = 0.9f; break;
+    case S_FINAL_MALO:  dur = 1.8f; break;
+    case S_FINAL_BUENO: dur = 1.8f; break;
+    case S_CAE:         dur = 0.6f; break;
+    default:            dur = 0.35f; break;
+    }
+    n = (int)(dur * SR);
+    for (i = 0; i < n; i++) {
+        float t = (float)i / SR, x = 0, r = ruido(), k = t / dur;
+        switch (cual) {
+        case S_GOLPE:      /* puñetazo / cuchillazo: golpe seco */
+            lp += (r - lp) * 0.25f;
+            x = golpe_sordo(t, 160, 55, 22, &fase) * 0.9f + lp * expf(-t * 70) * 0.9f;
+            break;
+        case S_DISPARO: case S_DISPARO_LEJOS: {   /* estampido + eco */
+            float corte = (cual == S_DISPARO ? 0.85f : 0.35f) * expf(-t * 9) + 0.04f;
+            lp += (r - lp) * corte;
+            x = lp * (t < 0.002f ? t / 0.002f : expf(-t * 7)) * 1.4f
+              + golpe_sordo(t, 120, 40, 9, &fase) * 0.9f;
+            x = tanhf(x * 1.8f) * (cual == S_DISPARO ? 1.0f : 0.6f);
+            break;
+        }
+        case S_WHOOSH:     /* algo pasa rapido al lado tuyo */
+            lp += (r - lp) * (0.08f + 0.25f * k);
+            lp2 += (lp - lp2) * 0.04f;
+            x = (lp - lp2) * powf(sinf(3.14159f * k), 2) * 2.2f;
+            break;
+        case S_CLICK:      /* arma sin balas */
+            x = (r * expf(-t * 500) + seno(t * 2400) * expf(-t * 300)) * 0.7f
+              + (t > 0.07f ? seno(t * 1800) * expf(-(t - 0.07f) * 400) * 0.5f : 0);
+            break;
+        case S_ROTA:       /* crujido: chasquidos agudos */
+            lp += (r - lp) * 0.5f;
+            x = (r - lp) * (ruido() > 0.6f ? 1.0f : 0.25f) * expf(-t * 12) * 1.5f;
+            break;
+        case S_CAE:        /* cuerpo que cae: dos golpes graves */
+            lp += (r - lp) * 0.06f;
+            x = golpe_sordo(t, 100, 35, 9, &fase) * 0.9f + lp * expf(-t * 10) * 1.2f
+              + golpe_sordo(t - 0.2f, 80, 30, 14, &fase2) * 0.5f;
+            break;
+        case S_APARECE:    /* golpe de tension: graves desafinados que crecen */
+            lp += ((sierra(fase) + sierra(fase2) + sierra(fase3)) / 3 - lp) * 0.035f;
+            fase += 55.0f / SR; fase2 += 58.3f / SR; fase3 += 82.6f / SR;
+            lp2 += (r - lp2) * 0.02f;
+            x = (lp * 2.2f + lp2 * 1.5f) * (t < 0.04f ? t / 0.04f : expf(-(t - 0.04f) * 2.6f))
+              + golpe_sordo(t, 70, 30, 6, &fase4) * 0.7f;
+            break;
+        case S_REFUERZO:   /* gruñido a lo lejos */
+            fase += (72 + 6 * seno(t * 7)) / SR;
+            lp += (sierra(fase) - lp) * 0.03f;
+            x = lp * sinf(3.14159f * k) * 1.6f;
+            break;
+        case S_EMBESTIDA:  /* se te tira encima: gruñido corto */
+            fase += (110 - 40 * k) / SR;
+            lp += (sierra(fase) * 0.7f + r * 0.3f - lp) * 0.08f;
+            x = lp * sinf(3.14159f * k) * 1.8f;
+            break;
+        case S_DANIO:      /* te lastiman: golpe pesado y sucio */
+            lp += (r - lp) * 0.35f;
+            x = golpe_sordo(t, 130, 38, 11, &fase) * 1.1f + lp * expf(-t * 28) * 1.1f;
+            x = tanhf(x * 2.2f) * 0.9f;
+            break;
+        case S_INFECCION:  /* tono enfermo que baja y vibra */
+            fase += 620 * (1 - 0.35f * k) * (1 + 0.012f * seno(t * 9)) / SR;
+            fase2 += 655 * (1 - 0.35f * k) / SR;
+            x = (seno(fase) + seno(fase2)) * 0.22f * (t < 0.08f ? t / 0.08f : 1) * (1 - k);
+            break;
+        case S_CURA: {     /* tres notas suaves */
+            static const float notas[3] = { 523.3f, 659.3f, 784.0f };
+            int q;
+            for (q = 0; q < 3; q++) {
+                float tq = t - q * 0.09f;
+                if (tq > 0) x += seno(tq * notas[q]) * expf(-tq * 5) * 0.22f;
+            }
+            break;
+        }
+        case S_LOOT:       /* encontrar algo: dos notas rapidas */
+            if (t < 0.07f)       x = seno(t * 660) * 0.35f;
+            else if (t < 0.22f)  x = seno(t * 990) * 0.35f * expf(-(t - 0.07f) * 18);
+            lp += (r - lp) * 0.3f;
+            x += lp * expf(-t * 40) * 0.3f;
+            break;
+        case S_NADA:       /* no hay nada */
+            x = seno(t * 196) * 0.35f * expf(-t * 14);
+            break;
+        case S_ESCAPE: {   /* pasos corriendo */
+            int q;
+            lp += (r - lp) * 0.2f;
+            for (q = 0; q < 5; q++) {
+                float tq = t - q * 0.13f;
+                if (tq > 0 && tq < 0.1f) x += (seno(tq * 90) + lp) * expf(-tq * 45) * (1 - q * 0.15f);
+            }
+            break;
+        }
+        case S_PASOS: {    /* dos pasos */
+            int q;
+            lp += (r - lp) * 0.15f;
+            for (q = 0; q < 2; q++) {
+                float tq = t - q * 0.24f;
+                if (tq > 0 && tq < 0.12f) x += (seno(tq * 80) * 0.6f + lp) * expf(-tq * 40) * 0.6f;
+            }
+            break;
+        }
+        case S_FIN_COMBATE: /* alivio: un tono que baja suave */
+            fase += (330 - 110 * k) / SR;
+            x = seno(fase) * 0.2f * sinf(3.14159f * k);
+            break;
+        case S_FINAL_MALO: /* todo se apaga */
+            fase += (110 - 75 * k) / SR;
+            lp += (sierra(fase) - lp) * 0.04f;
+            lp2 += (r - lp2) * 0.02f;
+            x = (lp * 1.8f + lp2) * (t < 0.03f ? t / 0.03f : (1 - k));
+            break;
+        case S_FINAL_BUENO: { /* acorde que crece y se va */
+            static const float notas[4] = { 261.6f, 329.6f, 392.0f, 523.3f };
+            int q;
+            for (q = 0; q < 4; q++) x += seno(t * notas[q]) * 0.12f;
+            x *= sinf(3.14159f * k);
+            break;
+        }
+        }
+        m[i] = x;
+        if (fabsf(x) > pico) pico = fabsf(x);
+    }
+    ganancia = pico > 0 ? VOLUMEN_SONIDO[cual] / pico : 0;   /* todos al volumen de la tabla */
+    datos = (short *)malloc(sizeof(short) * n);
+    for (i = 0; i < n; i++) {
+        float v = fmaxf(-1, fminf(1, m[i] * ganancia));
+        if (i > n - 200) v *= (float)(n - i) / 200;   /* sin chasquido al final */
+        datos[i] = (short)(v * 30000);
+    }
+    w.frameCount = (unsigned int)n;
+    w.sampleRate = SR;
+    w.sampleSize = 16;
+    w.channels = 1;
+    w.data = datos;
+    snd = LoadSoundFromWave(w);
+    free(datos);
+    return snd;
+}
+
+static void cargar_sonidos(void)
+{
+    int i;
+    if (!IsAudioDeviceReady()) return;
+    for (i = 0; i < NUM_SONIDOS; i++) {
+        char wav[96], ogg[96];
+        snprintf(wav, sizeof wav, "assets/sonidos/%s.wav", NOMBRE_SONIDO[i]);
+        snprintf(ogg, sizeof ogg, "assets/sonidos/%s.ogg", NOMBRE_SONIDO[i]);
+        if (FileExists(wav))      sonido[i] = LoadSound(wav);
+        else if (FileExists(ogg)) sonido[i] = LoadSound(ogg);
+        else                      sonido[i] = generar_sonido(i);
+        sonido_ok[i] = IsSoundValid(sonido[i]);
+        if (sonido_ok[i]) { SetSoundVolume(sonido[i], VOLUMEN_SONIDOS); hay_sonidos = 1; }
+    }
+}
+
+static void sonar(int cual)
+{
+    if (silencio || cual < 0 || !sonido_ok[cual]) return;
+    SetSoundPitch(sonido[cual], 0.92f + 0.16f * (float)rand() / RAND_MAX);   /* que no suene siempre igual */
+    PlaySound(sonido[cual]);
+}
+
+static void descargar_sonidos(void)
+{
+    int i;
+    for (i = 0; i < NUM_SONIDOS; i++) if (sonido_ok[i]) UnloadSound(sonido[i]);
+}
+
+/* ======================= ANIMACIONES =======================
+ * Todo es simple: flashes de color, temblor de pantalla, y el enemigo que
+ * se sacude, se te tira encima, cae o aparece. Los efectos de una misma
+ * jugada se reproducen uno detras del otro (ver PAUSA_FX). */
+
+static int sin_animaciones = 0;    /* las capturas de prueba las apagan */
+static double ahora = 0;
+
+typedef struct { Efecto e; double cuando; int hecho; } FxPendiente;
+static FxPendiente pendientes[MAX_EFECTOS];
+static int n_pendientes = 0;
+
+/* estado de las animaciones (tiempos de inicio; -100 = nunca) */
+static double temblor_t = -100;  static float temblor_fuerza = 0;
+static double flash_t = -100;    static float flash_dur = 0.2f, flash_alfa = 0; static Color flash_color;
+static double golpeado_t = -100;   /* el enemigo recibe un golpe */
+static double esquiva_t = -100;    /* el enemigo se corre */
+static double embestida_t = -100;  /* el enemigo se te tira encima */
+static double enemigo_desde = -100;/* el enemigo actual aparece desde este momento */
+static double cola_desde = -100;
+static double fondo_t = -100;    static float fondo_dur = 0.45f;
+static double texto_t = -100;
+static char fondo_visto[64] = "", enemigo_visto[64] = "";
+static char fantasma[64] = "";   /* el enemigo que cae o huye */
+static double fantasma_t = -100; static int fantasma_huye = 0;
+static float oscuridad = 0;      /* oscurecer el fondo en combate (sube y baja suave) */
+
+/* 0 -> 1 a medida que pasa la animacion (1 = termino o no empezo nunca) */
+static float progreso(double inicio, float dur)
+{
+    float k;
+    if (sin_animaciones) return 1;
+    k = (float)((ahora - inicio) / dur);
+    return k < 0 ? 0 : (k > 1 ? 1 : k);
+}
+static int activa(double inicio, float dur)
+{
+    return !sin_animaciones && ahora >= inicio && ahora < inicio + dur;
+}
+
+static void temblar(float fuerza)
+{
+    float resto = activa(temblor_t, 0.4f) ? temblor_fuerza * (1 - progreso(temblor_t, 0.4f)) : 0;
+    temblor_t = ahora;
+    temblor_fuerza = fmaxf(fuerza, resto);
+}
+
+static void destello(Color c, float alfa, float dur)
+{
+    flash_t = ahora; flash_color = c; flash_alfa = alfa; flash_dur = dur;
+}
+
+/* Cuanto esperar despues de un efecto antes de mostrar el siguiente */
+static float pausa_fx(TipoEfecto t)
+{
+    switch (t) {
+    case FX_ATAQUE_ENEMIGO: return 0.16f;   /* el golpe llega enseguida */
+    case FX_PASOS:          return 0.25f;
+    case FX_LOOT:           return 0.15f;
+    case FX_DANIO:          return 0.30f;
+    default:                return 0.34f;
+    }
+}
+
+static void disparar(const Efecto *e)
+{
+    switch (e->tipo) {
+    case FX_GOLPE:
+        sonar(S_GOLPE); golpeado_t = ahora; temblar(5);
+        destello((Color){ 255, 255, 255, 255 }, 0.12f, 0.10f);
+        break;
+    case FX_DISPARO:
+        sonar(S_DISPARO); golpeado_t = ahora; temblar(11);
+        destello((Color){ 255, 240, 200, 255 }, 0.55f, 0.14f);
+        break;
+    case FX_FALLO:          sonar(S_WHOOSH); esquiva_t = ahora; break;
+    case FX_SIN_BALAS:      sonar(S_CLICK); break;
+    case FX_ARMA_ROTA:
+        sonar(S_ROTA); temblar(4);
+        destello((Color){ 255, 255, 255, 255 }, 0.25f, 0.15f);
+        break;
+    case FX_ENEMIGO_CAE:    sonar(S_CAE); fantasma_t = ahora; fantasma_huye = 0; temblar(6); break;
+    case FX_ENEMIGO_HUYE:   sonar(S_WHOOSH); fantasma_t = ahora; fantasma_huye = 1; break;
+    case FX_APARECE:        sonar(S_APARECE); temblar(3); break;
+    case FX_REFUERZO:       sonar(S_REFUERZO); temblar(2); break;
+    case FX_ATAQUE_ENEMIGO: sonar(S_EMBESTIDA); embestida_t = ahora; break;
+    case FX_DISPARO_ENEMIGO:
+        sonar(S_DISPARO_LEJOS);
+        destello((Color){ 255, 230, 180, 255 }, 0.45f, 0.12f);
+        break;
+    case FX_DANIO: {
+        float pct = (float)e->valor;
+        sonar(S_DANIO);
+        temblar(fminf(26, 8 + pct * 0.7f));
+        destello((Color){ 200, 0, 0, 255 }, fminf(0.75f, 0.3f + pct * 0.015f), 0.35f);
+        break;
+    }
+    case FX_NO_TE_ALCANZA:  sonar(S_WHOOSH); break;
+    case FX_INFECCION:
+        sonar(S_INFECCION);
+        destello((Color){ 70, 160, 40, 255 }, 0.35f, 0.7f);
+        break;
+    case FX_CURA:
+        sonar(S_CURA);
+        destello((Color){ 210, 255, 225, 255 }, 0.18f, 0.6f);
+        break;
+    case FX_LOOT:           sonar(S_LOOT); break;
+    case FX_NADA:           sonar(S_NADA); break;
+    case FX_ESCAPE:         sonar(S_ESCAPE); temblar(3); break;
+    case FX_ESCAPE_FALLA:   sonar(S_WHOOSH); temblar(5); break;
+    case FX_PASOS:          sonar(S_PASOS); break;
+    case FX_FIN_COMBATE:    sonar(S_FIN_COMBATE); break;
+    case FX_FINAL_MALO:
+        sonar(S_FINAL_MALO); temblar(16);
+        destello((Color){ 150, 0, 0, 255 }, 0.85f, 1.2f);
+        break;
+    case FX_FINAL_BUENO:
+        sonar(S_FINAL_BUENO);
+        destello((Color){ 255, 255, 255, 255 }, 0.6f, 1.4f);
+        break;
+    default: break;
+    }
+}
+
+/* Pantalla nueva: preparar los efectos de lo que acaba de pasar */
+static void nuevos_efectos(void)
+{
+    Pantalla *p = &juego.pant;
+    double t = ahora, cae_t = -1, aparece_t = -1, final_t = -1;
+    int i;
+
+    n_pendientes = 0;
+    for (i = 0; i < juego.n_fx; i++) {
+        FxPendiente *f = &pendientes[n_pendientes++];
+        f->e = juego.fx[i];
+        f->cuando = t;
+        f->hecho = 0;
+        if ((f->e.tipo == FX_ENEMIGO_CAE || f->e.tipo == FX_ENEMIGO_HUYE) && cae_t < 0) {
+            cae_t = t;
+            /* el que cae se sigue viendo (quieto) hasta que le toca caer */
+            snprintf(fantasma, sizeof fantasma, "%s", f->e.imagen);
+            fantasma_t = t;
+            fantasma_huye = f->e.tipo == FX_ENEMIGO_HUYE;
+        }
+        if (f->e.tipo == FX_APARECE && aparece_t < 0) aparece_t = t;
+        if (f->e.tipo == FX_FINAL_MALO || f->e.tipo == FX_FINAL_BUENO) final_t = t;
+        t += pausa_fx(f->e.tipo);
+    }
+    juego.n_fx = 0;   /* ya los tomamos */
+
+    /* escapaste (o termino el combate de otra forma): el enemigo se desvanece en vez de cortarse */
+    if (cae_t < 0 && enemigo_visto[0] && !p->imagen_enemigo[0] && juego.estado != E_FINAL) {
+        snprintf(fantasma, sizeof fantasma, "%s", enemigo_visto);
+        fantasma_t = ahora;
+        fantasma_huye = 1;
+    }
+
+    /* cuando se empieza a ver el enemigo actual */
+    if (strcmp(p->imagen_enemigo, enemigo_visto) != 0 || aparece_t >= 0 || cae_t >= 0) {
+        if (cae_t >= 0)          enemigo_desde = cae_t + 0.45;
+        else if (aparece_t >= 0) enemigo_desde = aparece_t;
+        else                     enemigo_desde = ahora;
+        if (aparece_t >= 0) cola_desde = aparece_t + 0.2;
+    }
+    snprintf(enemigo_visto, sizeof enemigo_visto, "%s", p->imagen_enemigo);
+
+    /* cambio el lugar: la imagen entra desde el negro */
+    if (strcmp(p->imagen, fondo_visto) != 0) {
+        fondo_t = final_t >= 0 ? final_t : ahora;   /* el final entra despues del ultimo golpe */
+        fondo_dur = juego.estado == E_FINAL ? 1.6f : 0.45f;
+        snprintf(fondo_visto, sizeof fondo_visto, "%s", p->imagen);
+    }
+    texto_t = final_t >= 0 ? final_t + 0.6 : ahora;
+}
+
+static void actualizar_efectos(void)
+{
+    int i, hay_enemigo = juego.pant.imagen_enemigo[0] != '\0';
+    float objetivo;
+    ahora = GetTime();
+    for (i = 0; i < n_pendientes; i++)
+        if (!pendientes[i].hecho && ahora >= pendientes[i].cuando) {
+            pendientes[i].hecho = 1;
+            if (!sin_animaciones) disparar(&pendientes[i].e);
+        }
+    /* el fantasma desaparece cuando termina de caer */
+    if (fantasma[0] && ahora > fantasma_t + 0.6) fantasma[0] = '\0';
+    /* el fondo se oscurece de a poco al empezar un combate y se aclara al terminar */
+    objetivo = (hay_enemigo || fantasma[0]) ? 0.45f : 0;
+    if (sin_animaciones) oscuridad = objetivo;
+    else oscuridad += (objetivo - oscuridad) * fminf(1, GetFrameTime() * 5);
+}
+
+/* Desplazamiento de la pantalla por el temblor */
+static Vector2 temblor_actual(void)
+{
+    float k, a;
+    if (!activa(temblor_t, 0.4f)) return (Vector2){ 0, 0 };
+    k = progreso(temblor_t, 0.4f);
+    a = temblor_fuerza * (1 - k) * (1 - k);
+    return (Vector2){ a * sinf((float)ahora * 97), a * 0.7f * cosf((float)ahora * 131) };
+}
+
 /* ======================= ENTRADA ======================= */
 
 static Vector2 escala_y_offset(float *escala)
@@ -357,7 +804,7 @@ static float scroll_maximo(void)
 static void tocar(Vector2 p)
 {
     int i, indices[MAX_VISIBLES], hay_mas, n = opciones_visibles(indices, &hay_mas);
-    if (hay_musica && CheckCollisionPointRec(p, BOTON_MUSICA)) { silencio = !silencio; return; }
+    if ((hay_musica || hay_sonidos) && CheckCollisionPointRec(p, BOTON_MUSICA)) { silencio = !silencio; return; }
     for (i = 0; i < n + hay_mas; i++)
         if (CheckCollisionPointRec(p, rect_boton(i))) { activar_boton(i); return; }
 }
@@ -431,11 +878,13 @@ static void actualizar(void)
         pagina = 0;
         envolver(juego.pant.texto, TXT_W);
         scroll = 0;
+        nuevos_efectos();
     }
     if (scroll > scroll_maximo()) scroll = scroll_maximo();
     if (scroll < 0) scroll = 0;
 
     actualizar_musica();
+    actualizar_efectos();
 
     if (juego.quiere_salir) {
 #if defined(PLATFORM_WEB)
@@ -467,28 +916,82 @@ static void dibujar_imagen(void)
         if (npc && npc->ok) dibujar_enemigo(npc->tex, ANCHO * 0.72f, 0.95f, WHITE);
     }
 
+    /* oscurecer el fondo en combate (entra y sale suave) */
+    if (oscuridad > 0.01f) DrawRectangle(0, 0, ANCHO, IMG_ALTO, Fade(BLACK, oscuridad));
+
     if (enem) {
         /* posicion, tamaño y brillo de los que esperan detras (del mas cercano al mas lejano) */
         static const float pos_x[MAX_COLA_VISIBLE] = { -230, 230, -420, 420 };
         static const float escala[MAX_COLA_VISIBLE] = { 0.82f, 0.74f, 0.64f, 0.58f };
         static const unsigned char brillo[MAX_COLA_VISIBLE] = { 70, 55, 42, 34 };
+        float a_cola = progreso(cola_desde, 0.8f);
+        float a = progreso(enemigo_desde, 0.45f);
         int k;
-        DrawRectangle(0, 0, ANCHO, IMG_ALTO, Fade(BLACK, 0.45f));   /* oscurecer el fondo en combate */
         for (k = p->n_cola - 1; k >= 0; k--) {
             Imagen *atras = imagen(p->imagen_cola[k]);
             unsigned char b = brillo[k];
             if (atras && atras->ok)
-                dibujar_enemigo(atras->tex, ANCHO / 2.0f + pos_x[k], escala[k], (Color){ b, b, b, 255 });
+                dibujar_enemigo_mov(atras->tex, ANCHO / 2.0f + pos_x[k], escala[k],
+                                    (Color){ b, b, b, (unsigned char)(255 * a_cola) }, 0, 12 * (1 - a_cola));
         }
-        if (enem->ok) dibujar_enemigo(enem->tex, ANCHO / 2.0f, 1.0f, WHITE);
-        else texto(TextFormat("(falta assets/%s.png)", p->imagen_enemigo), ANCHO / 2.0f - 150, 200, 18, C_APAGADO);
+        if (enem->ok && a > 0) {
+            /* aparece: sube un poco y se aclara */
+            float dx = 0, dy = 18 * (1 - a), esc = 0.92f + 0.08f * a;
+            Color tinte = { 255, 255, 255, (unsigned char)(255 * a) };
+            if (!fantasma[0]) {
+                if (activa(golpeado_t, 0.28f)) {        /* recibe un golpe: se sacude y se pone rojo */
+                    float k2 = progreso(golpeado_t, 0.28f);
+                    dx = 16 * (1 - k2) * sinf((float)ahora * 80);
+                    tinte.g = tinte.b = (unsigned char)(255 * (0.35f + 0.65f * k2));
+                }
+                if (activa(esquiva_t, 0.35f))           /* esquiva: se corre a un costado */
+                    dx += 90 * sinf(3.14159f * progreso(esquiva_t, 0.35f));
+                if (activa(embestida_t, 0.26f))         /* se te tira encima: se agranda */
+                    esc *= 1 + 0.16f * sinf(3.14159f * progreso(embestida_t, 0.26f));
+            }
+            dibujar_enemigo_mov(enem->tex, ANCHO / 2.0f, esc, tinte, dx, dy);
+        } else if (!enem->ok) {
+            texto(TextFormat("(falta assets/%s.png)", p->imagen_enemigo), ANCHO / 2.0f - 150, 200, 18, C_APAGADO);
+        }
+    }
+
+    /* el enemigo que acaba de caer (o de irse) */
+    if (fantasma[0]) {
+        Imagen *f = imagen(fantasma);
+        if (f && f->ok) {
+            float k = progreso(fantasma_t, 0.55f), dx = 0, dy = 0;
+            Color tinte = { 255, 255, 255, 255 };
+            if (ahora < fantasma_t) {                  /* todavia no le toca: quieto */
+                if (activa(golpeado_t, 0.28f)) {
+                    float k2 = progreso(golpeado_t, 0.28f);
+                    dx = 16 * (1 - k2) * sinf((float)ahora * 80);
+                    tinte.g = tinte.b = (unsigned char)(255 * (0.35f + 0.65f * k2));
+                }
+                if (activa(esquiva_t, 0.35f)) dx += 90 * sinf(3.14159f * progreso(esquiva_t, 0.35f));
+            } else if (fantasma_huye) {                /* se va hacia un costado */
+                dx = 420 * k * k;
+                tinte.a = (unsigned char)(255 * (1 - k));
+            } else {                                   /* cae: se hunde, se oscurece y desaparece */
+                dy = 140 * k * k;
+                tinte.r = (unsigned char)(255 * (1 - 0.3f * k));
+                tinte.g = tinte.b = (unsigned char)(140 * (1 - k));
+                tinte.a = (unsigned char)(255 * (1 - k));
+            }
+            dibujar_enemigo_mov(f->tex, ANCHO / 2.0f, 1.0f, tinte, dx, dy);
+        }
+    }
+
+    /* al cambiar de lugar, la imagen entra desde el negro */
+    {
+        float k = progreso(fondo_t, fondo_dur);
+        if (k < 1) DrawRectangle(0, 0, ANCHO, IMG_ALTO, Fade(BLACK, 1 - k));
     }
 
     /* la imagen se funde con el negro de abajo */
     DrawRectangleGradientV(0, IMG_ALTO - 80, ANCHO, 80, Fade(BLACK, 0), C_NEGRO);
 
     /* boton de musica (arriba a la derecha): se toca o se aprieta M */
-    if (hay_musica) {
+    if (hay_musica || hay_sonidos) {
         Rectangle r = BOTON_MUSICA;
         DrawTextEx(fuente, "♪", (Vector2){ r.x + 16, r.y + 4 }, 34, 0, silencio ? C_APAGADO : C_BLANCO);
         if (silencio) DrawLineEx((Vector2){ r.x + 10, r.y + r.height - 8 }, (Vector2){ r.x + r.width - 10, r.y + 8 }, 3, C_BLANCO);
@@ -501,10 +1004,14 @@ static void dibujar_texto(void)
     char titulo[128];
 
     recortar(juego.pant.titulo, TXT_W, TAM_TITULO, titulo, sizeof titulo);
-    DrawTextEx(fuente_negrita, titulo, (Vector2){ TXT_X, TITULO_Y }, TAM_TITULO, 0, C_BLANCO);
+    DrawTextEx(fuente_negrita, titulo, (Vector2){ TXT_X, TITULO_Y }, TAM_TITULO, 0,
+               Fade(C_BLANCO, progreso(texto_t, 0.2f)));
 
-    for (i = 0; i < visibles && desde + i < n_lineas; i++)
-        texto(lineas[desde + i], TXT_X, TXT_Y + i * LINEA, TAM_TEXTO, C_BLANCO);
+    /* el texto nuevo aparece linea por linea (rapido) */
+    for (i = 0; i < visibles && desde + i < n_lineas; i++) {
+        float k = progreso(texto_t + 0.035 * i, 0.18f);
+        texto(lineas[desde + i], TXT_X + 8 * (1 - k), TXT_Y + i * LINEA, TAM_TEXTO, Fade(C_BLANCO, k));
+    }
 
     /* indicador de que hay mas texto arriba/abajo */
     if (n_lineas > visibles) {
@@ -580,8 +1087,18 @@ static void dibujar(void)
     dibujar_texto();
     dibujar_opciones();
     dibujar_heridas();
+    if (activa(flash_t, flash_dur)) {   /* destello de color (disparo, daño, infeccion...) */
+        float k = progreso(flash_t, flash_dur);
+        DrawRectangle(0, 0, ANCHO, ALTO, Fade(flash_color, flash_alfa * (1 - k) * (1 - k)));
+    }
     EndBlendMode();
     EndTextureMode();
+
+    {   /* temblor de pantalla */
+        Vector2 t = temblor_actual();
+        o.x += t.x * s;
+        o.y += t.y * s;
+    }
 
     BeginDrawing();
     ClearBackground(C_NEGRO);
@@ -639,6 +1156,7 @@ int main(void)
     SetTextureFilter(lienzo.texture, TEXTURE_FILTER_BILINEAR);
 
     cargar_musica();
+    cargar_sonidos();
     juego_nuevo(&juego);
 
 #if defined(PLATFORM_WEB)
@@ -648,6 +1166,7 @@ int main(void)
     while (!WindowShouldClose() && !cerrar) cuadro();
 #endif
 
+    descargar_sonidos();
     descargar_musica();
     UnloadRenderTexture(lienzo);
     CloseWindow();

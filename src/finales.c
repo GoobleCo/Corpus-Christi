@@ -62,6 +62,7 @@ void terminar(Juego *g, Final f)
     if ((f == F_HELICOPTERO || f == F_TREN || f == F_BOTE) && g->j.infeccion > 0)
         f = F_INFECCION_TARDIA;
     g->final = f;
+    efecto(g, (f == F_MUERTE || f == F_CONVERTIDO || f == F_CUARENTENA) ? FX_FINAL_MALO : FX_FINAL_BUENO, 0, 0);
     g->en_combate = 0;
     g->estado = E_FINAL;
 }

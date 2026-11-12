@@ -1,0 +1,24 @@
+Sonidos del juego. Vienen generados por codigo (src/main.c), asi que esta
+carpeta puede quedar vacia. Para reemplazar uno, pone aca un archivo .wav
+(o .ogg) con uno de estos nombres:
+
+  golpe.wav            le pegas a un enemigo (punos o arma blanca)
+  disparo.wav          disparas
+  disparo_enemigo.wav  te disparan
+  esquivar.wav         algo esquiva / no te alcanza / huye
+  click.wav            arma sin balas
+  arma_rota.wav        se rompe tu arma
+  cae.wav              cae un enemigo
+  aparece.wav          empieza un combate
+  refuerzo.wav         el ruido atrae a otro enemigo
+  embestida.wav        un enemigo se te tira encima
+  danio.wav            te lastiman
+  infeccion.wav        se te infecta la herida
+  cura.wav             usas un item que cura o mejora
+  loot.wav             encontras cosas
+  nada.wav             no queda nada para buscar
+  escape.wav           escapas corriendo
+  pasos.wav            cambias de lugar
+  fin_combate.wav      se termina un combate
+  final_malo.wav       muerte / convertido / cuarentena
+  final_bueno.wav      escapaste de la ciudad

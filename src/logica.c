@@ -32,6 +32,16 @@ int tirar_d20(void)
 int minimo(int a, int b) { return a < b ? a : b; }
 int maximo(int a, int b) { return a > b ? a : b; }
 
+void efecto(Juego *g, TipoEfecto t, int valor, const char *imagen)
+{
+    Efecto *f;
+    if (g->n_fx >= MAX_EFECTOS) return;
+    f = &g->fx[g->n_fx++];
+    f->tipo = t;
+    f->valor = valor;
+    snprintf(f->imagen, sizeof f->imagen, "%s", imagen ? imagen : "");
+}
+
 static void log_va(Juego *g, const char *fmt, va_list ap)
 {
     size_t len = strlen(g->msg);
@@ -192,6 +202,7 @@ static void iniciar_combate(Juego *g, int bloque)
         else if (c->n <= 3) log_msg(g, "Hay movimiento por todos lados. No estás solo.\n");
         else                log_msg(g, "Las sombras empiezan a moverse. Son demasiadas.\n");
     }
+    efecto(g, FX_APARECE, c->n, NULL);
     log_num(g, "  [%d enemigos:", c->n);
     for (i = 0; i < c->n; i++) log_num(g, "%s %s", i ? "," : "", c->cola[i].nombre);
     log_num(g, "]\n");
@@ -227,11 +238,14 @@ static int atacar(Juego *g)
         int m = buscar_item(j, arma->municion);
         if (m < 0) {
             log_msg(g, "Click. No te quedan balas para tu %s.\n", arma->nombre);
+            efecto(g, FX_SIN_BALAS, 0, NULL);
             return 0;
         }
         quitar_slot(j, m, 1);
+        efecto(g, FX_DISPARO, arma->valor, NULL);
         if (e->evadiendo) {
             log_msg(g, "Disparás, pero ya no está ahí.\n");
+            efecto(g, FX_FALLO, 0, NULL);
             e->evadiendo = 0;
         } else {
             /* Arma de fuego: daño base + (d20 - armadura del enemigo) */
@@ -245,6 +259,7 @@ static int atacar(Juego *g)
         if (azar(1, 100) <= CHANCE_RUIDO && c->n < MAX_ENEMIGOS) {
             c->cola[c->n] = enemigo_aleatorio(c->color, c->subterraneo);
             log_msg(g, "  El estruendo rebota entre las paredes. Algo más viene.\n");
+            efecto(g, FX_REFUERZO, 0, NULL);
             c->n++;
         }
         return 1;
@@ -252,11 +267,13 @@ static int atacar(Juego *g)
 
     if (e->evadiendo) {
         log_msg(g, "Se mueve antes de que lo toques.\n");
+        efecto(g, FX_FALLO, 0, NULL);
         e->evadiendo = 0;
     } else if (s < 0) {
         d = maximo(1, DANIO_PUNOS + j->fuerza - e->armadura);
         e->vida -= d;
         log_msg(g, "Le pegás %s con los puños.\n", a_quien(e));
+        efecto(g, FX_GOLPE, d, NULL);
         log_num(g, "  [%d de daño → %d/%d]\n", d, maximo(0, e->vida), e->vida_max);
         return 1;
     } else {
@@ -264,6 +281,7 @@ static int atacar(Juego *g)
         d = maximo(1, ITEMS[j->inv[s].id].valor + j->fuerza - e->armadura);
         e->vida -= d;
         log_msg(g, "Golpeás %s con tu %s.\n", a_quien(e), ITEMS[j->inv[s].id].nombre);
+        efecto(g, FX_GOLPE, d, NULL);
         log_num(g, "  [%d de daño → %d/%d]\n", d, maximo(0, e->vida), e->vida_max);
     }
     /* desgaste del arma blanca */
@@ -271,6 +289,7 @@ static int atacar(Juego *g)
         j->inv[s].usos--;
         if (j->inv[s].usos == 0) {
             log_msg(g, "  Tu %s se rompe.\n", ITEMS[j->inv[s].id].nombre);
+            efecto(g, FX_ARMA_ROTA, 0, NULL);
             quitar_slot(j, s, 1);
         }
     }
@@ -283,8 +302,11 @@ static void resolver_turno(Juego *g)
     Combate *c = &g->c;
     Enemigo *e = &c->cola[c->actual];
 
+    char imagen_e[48];
+    snprintf(imagen_e, sizeof imagen_e, "enemigos/%s", e->slug);
     g->estado = E_COMBATE;
     if (e->vida <= 0) {
+        efecto(g, FX_ENEMIGO_CAE, 0, imagen_e);
         if (e->tipo == EN_VANDALO) {
             log_msg(g, "%s cae y no se levanta.\n", mayus(e->percibido));
             soltar_arma_vandalo(g, e);
@@ -293,6 +315,7 @@ static void resolver_turno(Juego *g)
         }
         c->actual++;   /* el jugador siempre empieza contra el próximo enemigo */
     } else if (turno_enemigo(g, e)) {
+        efecto(g, FX_ENEMIGO_HUYE, 0, imagen_e);
         c->actual++;
     }
 
@@ -305,6 +328,7 @@ static void resolver_turno(Juego *g)
         g->en_combate = 0;
         g->estado = E_BLOQUE;
         log_msg(g, "\nSilencio otra vez. Te tiemblan las manos.\n");
+        efecto(g, FX_FIN_COMBATE, 0, NULL);
     }
 }
 
@@ -332,11 +356,13 @@ static void elegir_combate(Juego *g, int v)
         log_num(g, "  [d20 = %d, necesitabas más de %d]\n", d20, necesita);
         if (d20 > necesita) {
             log_msg(g, "Los perdés de vista, pero no podés quedarte acá.\n");
+            efecto(g, FX_ESCAPE, 0, NULL);
             g->en_combate = 0;
             g->forzado = 1;
             g->estado = E_MOVER;
         } else {
             log_msg(g, "No hay por dónde pasar.\n");
+            efecto(g, FX_ESCAPE_FALLA, 0, NULL);
             resolver_turno(g);
         }
         break;
@@ -353,9 +379,10 @@ static void lootear(Juego *g)
 {
     Bloque *b = &mapa[g->j.bloque_actual];
     int n, i, id;
-    if (b->looteado) { log_msg(g, "Ya revisaste este lugar. No queda nada.\n"); return; }
+    if (b->looteado) { log_msg(g, "Ya revisaste este lugar. No queda nada.\n"); efecto(g, FX_NADA, 0, NULL); return; }
     b->looteado = 1;
     log_msg(g, "Revisás el lugar y encontrás:\n");
+    efecto(g, FX_LOOT, 0, NULL);
     if (b->item_garantizado >= 0)
         recibir_loot(g, b->item_garantizado, cantidad_loot(b->item_garantizado));
     n = azar(1, 3);
@@ -430,6 +457,7 @@ static void entrar_bloque(Juego *g, int destino)
     g->estado = E_BLOQUE;
     j->bloque_actual = destino;
     j->turno++;   /* cada cambio de bloque cuenta como un turno */
+    efecto(g, FX_PASOS, 0, NULL);
 
     switch (b->especial) {
     case ESP_TREN: terminar(g, F_TREN); return;
@@ -513,6 +541,7 @@ void juego_elegir(Juego *g, int indice)
     if (g->pant.op[indice].deshabilitada) return;
     v = g->pant.op[indice].valor;
     g->msg[0] = '\0';
+    g->n_fx = 0;
     if (g->estado != E_BLOQUE || (v != A_HABLAR_SOLDADO)) g->patrulla = 0;
 
     switch (g->estado) {
