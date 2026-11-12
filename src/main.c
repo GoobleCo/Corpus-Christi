@@ -32,6 +32,10 @@
 #include <emscripten/html5.h>
 #endif
 
+#ifndef VERSION_JUEGO
+#define VERSION_JUEGO "dev"   /* la compilacion de GitHub pone aca el numero de version */
+#endif
+
 #define ANCHO        1280
 #define ALTO         720
 #define IMG_ALTO     384
@@ -1021,6 +1025,9 @@ static void dibujar_texto(void)
         if (scroll < scroll_maximo() - 0.5f)
             texto("▼ más abajo", TXT_X + TXT_W - 100, ALTO - 26, 16, C_BLANCO);
     }
+
+    if (juego.pant.pide_nombre)   /* version, chiquito abajo (para saber si se actualizo) */
+        texto("versión " VERSION_JUEGO, ANCHO - 150, ALTO - 24, 14, C_APAGADO);
 
     if (juego.pant.pide_nombre) {
         float y = TXT_Y + TXT_ALTO - 44;
