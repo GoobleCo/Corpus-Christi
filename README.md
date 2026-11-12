@@ -68,6 +68,13 @@ Finales: `helicoptero.png`, `tren.png`, `bote.png`, `cuarentena.png`, `infeccion
 Cambia sola según dónde estás, con un fundido. Se silencia con la tecla **M** o tocando la ♪ arriba a la derecha.
 En la versión web empieza a sonar después del primer toque o tecla (los navegadores no dejan reproducir audio antes).
 
+**Animaciones y sonidos:** cada cosa que pasa tiene su efecto: la pantalla tiembla y se pone roja cuando
+te lastiman, el disparo hace un fogonazo, el enemigo se sacude cuando le pegás, se te viene encima cuando
+ataca, se hunde cuando cae y sale de la oscuridad cuando aparece; la infección da un destello verde y al
+cambiar de lugar la imagen entra desde el negro. Los sonidos se generan con código, no hace falta ningún archivo.
+Para cambiar uno, poné tu propio `.wav` u `.ogg` en `assets/sonidos/` (ver el `LEEME.txt` de esa carpeta).
+La tecla **M** / la ♪ silencia todo, música y sonidos.
+
 Los biomas de cada bloque están en la tabla `BIOMA` de `src/mapa.c`. Para darle una imagen propia a una
 calle, alcanza con poner `assets/lugares/<nombre>.png`.
 

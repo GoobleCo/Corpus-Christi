@@ -268,6 +268,7 @@ int usar_item(Juego *g, int s)
         if (j->vida >= j->vida_max) { log_msg(g, "No estás herido.\n"); return 0; }
         j->vida = minimo(j->vida_max, j->vida + ITEMS[id].valor);
         log_msg(g, "Usás %s. Te sentís un poco mejor.\n", ITEMS[id].nombre);
+        efecto(g, FX_CURA, 0, NULL);
         log_num(g, "  [vida %d/%d]\n", j->vida, j->vida_max);
         quitar_slot(j, s, 1);
         return 1;
@@ -287,6 +288,7 @@ int usar_item(Juego *g, int s)
             log_msg(g, "%s no se usa: sirve con tenerlo encima.\n", ITEMS[id].nombre);
             return 0;
         }
+        efecto(g, FX_CURA, 0, NULL);
         quitar_slot(j, s, 1);
         return 1;
     default:

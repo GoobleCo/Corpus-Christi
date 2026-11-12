@@ -100,6 +100,7 @@ void aplicar_danio(Juego *g, int d)
     Jugador *j = &g->j;
     int pct = j->vida_max > 0 ? d * 100 / j->vida_max : 0;
     j->vida = maximo(0, j->vida - d);
+    efecto(g, d > 0 ? FX_DANIO : FX_NO_TE_ALCANZA, pct, NULL);
     if (d <= 0)        log_msg(g, "  No te alcanza.\n");
     else if (pct < 8)  log_msg(g, "  Te lastima: apenas un rasguño.\n");
     else if (pct < 16) log_msg(g, "  Te lastima. Duele.\n");
@@ -119,6 +120,7 @@ void aplicar_infeccion(Juego *g, int ixi)
         return;
     }
     g->j.infeccion = minimo(100, g->j.infeccion + gana);
+    efecto(g, FX_INFECCION, gana, NULL);
     if (g->j.infeccion >= 60)      log_msg(g, "  La herida se infecta. Tenés fiebre alta y la frente empapada.\n");
     else if (g->j.infeccion >= 30) log_msg(g, "  La herida se infecta. Empezás a tener fiebre.\n");
     else                           log_msg(g, "  La herida arde. Puede que se haya infectado.\n");
@@ -131,6 +133,7 @@ static void golpe_enemigo(Juego *g, int danio, int ixi, int contagio)
 {
     /* la armadura resta daño, pero siempre pasa al menos ARMADURA_MIN_PCT % */
     int minimo_pasa = maximo(1, danio * ARMADURA_MIN_PCT / 100);
+    efecto(g, FX_ATAQUE_ENEMIGO, 0, NULL);
     aplicar_danio(g, maximo(minimo_pasa, danio - armadura_total(&g->j)));
     if (ixi > 0 && azar(1, 100) <= contagio) aplicar_infeccion(g, ixi);
 }
@@ -178,6 +181,7 @@ int turno_enemigo(Juego *g, Enemigo *e)
             /* Arma de fuego: daño base + (d20 - armadura) */
             int d20 = tirar_d20();
             log_msg(g, "Un fogonazo. %s te dispara.\n", mayus(e->percibido));
+            efecto(g, FX_DISPARO_ENEMIGO, 0, NULL);
             log_num(g, "  [d20 = %d]\n", d20);
             aplicar_danio(g, maximo(0, a->valor * VANDALO_FUEGO_PCT / 100 + (d20 - armadura_total(j)) / 2));
         } else {
